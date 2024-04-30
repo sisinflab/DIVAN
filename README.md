@@ -1,1 +1,1 @@
-# RecSysChallenge2024_IGCCF
+# RecSysChallenge2024_DIN
