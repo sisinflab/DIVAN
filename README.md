@@ -20,7 +20,7 @@ Note that the dataset is quite large. Preparing the full dataset needs about 1T 
 2. Unzip the data files to the following
 
     ```bash
-    cd ~/RecSys2024_CTR_Challenge/data/Ebnerd/
+    cd ~/RecSys2024_CTR_Challenge/data/Ebnerd_[demo | small | large]/
     find -L .
 
     .
@@ -43,7 +43,7 @@ Note that the dataset is quite large. Preparing the full dataset needs about 1T 
 3. Convert the data to csv format
 
     ```bash
-    cd ~/RecSys2024_CTR_Challenge/data/Ebnerd/
+    cd ~/RecSys2024_CTR_Challenge/data/Ebnerd_[demo | small | large]/
     python prepare_data_v1.py
     ```
 
@@ -79,10 +79,6 @@ source activate fuxictr
     ```
 
 3. Make a submission. We get test AUC: 0.7154.
-
-    <div align="left">
-        <img width="99%" src="./img/submit_v1.png">
-    </div>
 
 ### Potential Improvements
 
