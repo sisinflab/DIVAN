@@ -57,6 +57,14 @@ def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
     df = df.with_columns(pl.col(column).apply(lambda x: f"{sep}".join(str(i) for i in x)))
     return df
 
+def impute_list_with_mean(lst):
+    non_null_values = [x for x in lst if x not in [None, "null"]]
+    if non_null_values:
+        mean_value = sum(non_null_values) / len(non_null_values)
+        return [x if x is not None else mean_value for x in lst]
+    else:
+        return lst
+
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
                     'total_inviews', 'total_pageviews', 'total_read_time',
@@ -89,10 +97,22 @@ def join_data(data_path):
                                     "read_time_fixed": "hist_read_time",
                                     "impression_time_fixed": "hist_time",
                                     "scroll_percentage_fixed": "hist_scroll_percent"})
+
+    history_df = history_df.with_columns(
+        pl.col("hist_scroll_percent").apply(impute_list_with_mean)
+    )
+
+    history_df = history_df.with_columns(
+        pl.col("hist_read_time").apply(impute_list_with_mean)
+    )
     history_df = tokenize_seq(history_df, 'hist_id', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
-    # history_df["hist_time"] = history_df["hist_time"].map(
-    #     lambda x: [datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%f") for v in x[-MAX_SEQ_LEN:]])
-    history_df = history_df.select(["user_id", "hist_id"])
+    history_df = tokenize_seq(history_df, 'hist_read_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
+    history_df = tokenize_seq(history_df, 'hist_scroll_percent', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
+    history_df = tokenize_seq(history_df, 'hist_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
+
+    # history_df = history_df.with_columns(
+    #     pl.col("hist_time").apply(lambda x: [datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%f") for v in x[-MAX_SEQ_LEN:]]))
+    # history_df = history_df.select(["user_id", "hist_id"])
     history_df = history_df.with_columns(
         pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
         pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias("hist_subcat1"),

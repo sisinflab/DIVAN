@@ -36,6 +36,9 @@ dataset_config:
             - {name: sentiment_label, active: True, dtype: str, type: categorical}
             - {name: subcat1, active: True, dtype: str, type: categorical}
             - {name: hist_id, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id}
+            - {name: hist_time, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id}
+            - {name: hist_scroll_percent, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id}
+            - {name: hist_read_time, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id}
             - {name: hist_cat, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: category}
             - {name: hist_subcat1, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: subcat1}
             - {name: hist_sentiment, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: sentiment_label}
