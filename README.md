@@ -37,14 +37,14 @@ Note that the dataset is quite large. Preparing the full dataset needs about 1T 
     ./test/behaviors.parquet
     ./image_embeddings.parquet
     ./contrastive_vector.parquet
-    ./prepare_data_v1.py
+    ./prepare_data_neg_sampling.py
     ```
 
 3. Convert the data to csv format
 
     ```bash
     cd ~/RecSys2024_CTR_Challenge/data/Ebnerd_[demo | small | large]/
-    python prepare_data_v1.py
+    python prepare_data_neg_sampling.py
     ```
 
 ### Environment

@@ -394,140 +394,30 @@ def remove_positives_from_inview(
     return df.with_columns(pl.Series(inview_col, list(negative_article_ids)))
 
 
+# NEW FUNCTION
+def flatten_single_value_list_column(df: pl.DataFrame, col_name: str) -> pl.DataFrame:
+    """
+    Flatten a column of lists to single values if each list contains only one element.
+
+    Args:
+        df (pl.DataFrame): The input Polars DataFrame.
+        col_name (str): The name of the column to flatten.
+
+    Returns:
+        pl.DataFrame: A new DataFrame with the specified column flattened.
+    """
+    return df.with_columns(pl.col(col_name).arr.first().alias(col_name))
+
+
 def sampling_strategy_wu2019(
         df: pl.DataFrame,
         npratio: int,
         shuffle: bool = False,
         with_replacement: bool = True,
         seed: int = None,
-        inview_col: str = DEFAULT_INVIEW_ARTICLES_COL,
-        clicked_col: str = DEFAULT_CLICKED_ARTICLES_COL,
+        inview_col: str = "article_id",
+        clicked_col: str = "article_ids_clicked",
 ) -> pl.DataFrame:
-    """
-    Samples negative articles from the inview article pool for a given negative-position-ratio (npratio).
-    The npratio (negative article per positive article) is defined as the number of negative article samples
-    to draw for each positive article sample.
-
-    This function follows the sampling strategy introduced in the paper "NPA: Neural News Recommendation with
-    Personalized Attention" by Wu et al. (KDD '19).
-
-    This is done according to the following steps:
-    1. Remove the positive click-article id pairs from the DataFrame.
-    2. Explode the DataFrame based on the clicked articles column.
-    3. Downsample the inview negative article ids for each exploded row using the specified npratio, either
-        with or without replacement.
-    4. Concatenate the clicked articles back to the inview articles as lists.
-    5. Convert clicked articles column to type List(Int)
-
-    References:
-        Chuhan Wu, Fangzhao Wu, Mingxiao An, Jianqiang Huang, Yongfeng Huang, and Xing Xie. 2019.
-        Npa: Neural news recommendation with personalized attention. In KDD, pages 2576-2584. ACM.
-
-    Args:
-        df (pl.DataFrame): The input DataFrame containing click-article id pairs.
-        npratio (int): The ratio of negative in-view article ids to positive click-article ids.
-        shuffle (bool, optional): Whether to shuffle the order of the in-view article ids in each list. Default is True.
-        with_replacement (bool, optional): Whether to sample the inview article ids with or without replacement.
-            Default is True.
-        seed (int, optional): Random seed for reproducibility. Default is None.
-        inview_col (int, optional): inview column name. Default is DEFAULT_INVIEW_ARTICLES_COL,
-        clicked_col (int, optional): clicked column name. Default is DEFAULT_CLICKED_ARTICLES_COL,
-
-    Returns:
-        pl.DataFrame: A new DataFrame with downsampled in-view article ids for each click according to the specified npratio.
-        The DataFrame has the same columns as the input DataFrame.
-
-    Raises:
-        ValueError: If npratio is less than 0.
-        ValueError: If the input DataFrame does not contain the necessary columns.
-
-    Examples:
-    >>> from RecSysChallenge2024_DIN.utils.constants import DEFAULT_CLICKED_ARTICLES_COL, DEFAULT_INVIEW_ARTICLES_COL
-    >>> import polars as pl
-    >>> df = pl.DataFrame(
-            {
-                "impression_id": [0, 1, 2, 3],
-                "user_id": [1, 1, 2, 3],
-                DEFAULT_INVIEW_ARTICLES_COL: [[1, 2, 3], [1, 2, 3, 4], [1, 2, 3], [1]],
-                DEFAULT_CLICKED_ARTICLES_COL: [[1, 2], [1, 3], [1], [1]],
-            }
-        )
-    >>> df
-        shape: (4, 4)
-        ┌───────────────┬─────────┬────────────────────┬─────────────────────┐
-        │ impression_id ┆ user_id ┆ article_ids_inview ┆ article_ids_clicked │
-        │ ---           ┆ ---     ┆ ---                ┆ ---                 │
-        │ i64           ┆ i64     ┆ list[i64]          ┆ list[i64]           │
-        ╞═══════════════╪═════════╪════════════════════╪═════════════════════╡
-        │ 0             ┆ 1       ┆ [1, 2, 3]          ┆ [1, 2]              │
-        │ 1             ┆ 1       ┆ [1, 2, … 4]        ┆ [1, 3]              │
-        │ 2             ┆ 2       ┆ [1, 2, 3]          ┆ [1]                 │
-        │ 3             ┆ 3       ┆ [1]                ┆ [1]                 │
-        └───────────────┴─────────┴────────────────────┴─────────────────────┘
-    >>> sampling_strategy_wu2019(df, npratio=1, shuffle=False, with_replacement=True, seed=123)
-        shape: (6, 4)
-        ┌───────────────┬─────────┬────────────────────┬─────────────────────┐
-        │ impression_id ┆ user_id ┆ article_ids_inview ┆ article_ids_clicked │
-        │ ---           ┆ ---     ┆ ---                ┆ ---                 │
-        │ i64           ┆ i64     ┆ list[i64]          ┆ list[i64]           │
-        ╞═══════════════╪═════════╪════════════════════╪═════════════════════╡
-        │ 0             ┆ 1       ┆ [3, 1]             ┆ [1]                 │
-        │ 0             ┆ 1       ┆ [3, 2]             ┆ [2]                 │
-        │ 1             ┆ 1       ┆ [4, 1]             ┆ [1]                 │
-        │ 1             ┆ 1       ┆ [4, 3]             ┆ [3]                 │
-        │ 2             ┆ 2       ┆ [3, 1]             ┆ [1]                 │
-        │ 3             ┆ 3       ┆ [null, 1]          ┆ [1]                 │
-        └───────────────┴─────────┴────────────────────┴─────────────────────┘
-    >>> sampling_strategy_wu2019(df, npratio=1, shuffle=True, with_replacement=True, seed=123)
-        shape: (6, 4)
-        ┌───────────────┬─────────┬────────────────────┬─────────────────────┐
-        │ impression_id ┆ user_id ┆ article_ids_inview ┆ article_ids_clicked │
-        │ ---           ┆ ---     ┆ ---                ┆ ---                 │
-        │ i64           ┆ i64     ┆ list[i64]          ┆ list[i64]           │
-        ╞═══════════════╪═════════╪════════════════════╪═════════════════════╡
-        │ 0             ┆ 1       ┆ [3, 1]             ┆ [1]                 │
-        │ 0             ┆ 1       ┆ [2, 3]             ┆ [2]                 │
-        │ 1             ┆ 1       ┆ [4, 1]             ┆ [1]                 │
-        │ 1             ┆ 1       ┆ [4, 3]             ┆ [3]                 │
-        │ 2             ┆ 2       ┆ [3, 1]             ┆ [1]                 │
-        │ 3             ┆ 3       ┆ [null, 1]          ┆ [1]                 │
-        └───────────────┴─────────┴────────────────────┴─────────────────────┘
-    >>> sampling_strategy_wu2019(df, npratio=2, shuffle=False, with_replacement=True, seed=123)
-        shape: (6, 4)
-        ┌───────────────┬─────────┬────────────────────┬─────────────────────┐
-        │ impression_id ┆ user_id ┆ article_ids_inview ┆ article_ids_clicked │
-        │ ---           ┆ ---     ┆ ---                ┆ ---                 │
-        │ i64           ┆ i64     ┆ list[i64]          ┆ list[i64]           │
-        ╞═══════════════╪═════════╪════════════════════╪═════════════════════╡
-        │ 0             ┆ 1       ┆ [3, 3, 1]          ┆ [1]                 │
-        │ 0             ┆ 1       ┆ [3, 3, 2]          ┆ [2]                 │
-        │ 1             ┆ 1       ┆ [4, 2, 1]          ┆ [1]                 │
-        │ 1             ┆ 1       ┆ [4, 2, 3]          ┆ [3]                 │
-        │ 2             ┆ 2       ┆ [3, 2, 1]          ┆ [1]                 │
-        │ 3             ┆ 3       ┆ [null, null, 1]    ┆ [1]                 │
-        └───────────────┴─────────┴────────────────────┴─────────────────────┘
-    # If we use without replacement, we need to ensure there are enough negative samples:
-    >>> sampling_strategy_wu2019(df, npratio=2, shuffle=False, with_replacement=False, seed=123)
-        polars.exceptions.ShapeError: cannot take a larger sample than the total population when `with_replacement=false`
-    ## Either you'll have to remove the samples or split the dataframe yourself and only upsample the samples that doesn't have enough
-    >>> min_neg = 2
-    >>> sampling_strategy_wu2019(
-            df.filter(pl.col(DEFAULT_INVIEW_ARTICLES_COL).list.len() > (min_neg + 1)),
-            npratio=min_neg,
-            shuffle=False,
-            with_replacement=False,
-            seed=123,
-        )
-        shape: (2, 4)
-        ┌───────────────┬─────────┬────────────────────┬─────────────────────┐
-        │ impression_id ┆ user_id ┆ article_ids_inview ┆ article_ids_clicked │
-        │ ---           ┆ ---     ┆ ---                ┆ ---                 │
-        │ i64           ┆ i64     ┆ list[i64]          ┆ i64                 │
-        ╞═══════════════╪═════════╪════════════════════╪═════════════════════╡
-        │ 1             ┆ 1       ┆ [2, 4, 1]          ┆ 1                   │
-        │ 1             ┆ 1       ┆ [2, 4, 3]          ┆ 3                   │
-        └───────────────┴─────────┴────────────────────┴─────────────────────┘
-    """
     df = (
         # Step 1: Remove the positive 'article_id' from inview articles
         df.pipe(

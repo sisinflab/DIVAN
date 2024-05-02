@@ -34,6 +34,8 @@ def _check_columns_in_df(df: pl.DataFrame, columns: list[str]) -> None:
         )
 
 
+
+
 def _validate_equal_list_column_lengths(df: pl.DataFrame, col1: str, col2: str) -> bool:
     """
     Checks if the items in two list columns of a DataFrame have equal lengths.

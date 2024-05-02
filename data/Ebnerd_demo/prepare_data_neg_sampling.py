@@ -22,23 +22,12 @@ from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
 
-# TODO Aggiungo questo
-import sys
-sys.path.insert(1, "D:/RecSys_Challenge/RecSysChallenge2024_DIN/utils")
-from pathlib import Path
-from RecSysChallenge2024_DIN.utils.functions import (sampling_strategy_wu2019, create_binary_labels_column, ebnerd_from_path)
+from RecSysChallenge2024_DIN.utils.functions import (sampling_strategy_wu2019, create_binary_labels_column,
+                                                     ebnerd_from_path, flatten_single_value_list_column)
 from RecSysChallenge2024_DIN.utils.constants import (DEFAULT_USER_COL,
-                             DEFAULT_HISTORY_ARTICLE_ID_COL,
-                             DEFAULT_INVIEW_ARTICLES_COL,
-                             DEFAULT_CLICKED_ARTICLES_COL)
-
-COLUMNS = [
-    DEFAULT_USER_COL,
-    DEFAULT_HISTORY_ARTICLE_ID_COL,
-    DEFAULT_INVIEW_ARTICLES_COL,
-    DEFAULT_CLICKED_ARTICLES_COL,
-]
-# Fino qui
+                                                     DEFAULT_HISTORY_ARTICLE_ID_COL,
+                                                     DEFAULT_INVIEW_ARTICLES_COL,
+                                                     DEFAULT_CLICKED_ARTICLES_COL)
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
@@ -102,25 +91,26 @@ with open(f"./{dataset_version}/news_info.jsonl", "w") as f:
 
 print("Preprocess behavior data...")
 
+"""
+La funzione join_data è stata modificata per creare un dataset in una forma utile per applicare una triplet loss
+1) Applico il sampling_wu preso dalla funzioni fornite dal github della challenge
+2) Prima ogni training sample era costituito da un solo candidato e la corrispettiva label da predire
+3) Ogni training sample ha un solo elemento cliccato(potenzialmente da cambiare) e negative sample(campionati dall'inview)
+4) L'idea è quindi applicare una loss come la Triplet per avvicinare il vettore che il nostro modello da in output da quello cliccato
+e al contrario allontanarlo dagli altri
+VEDERE in Ebnerd_demo_x1/train.csv il risultato ottenuto per adesso
+"""
 
-## CAMBIATO IL SECONDO PARAMETRO
-def join_data(data_path, train_df_0=None):
+
+def join_data(data_path):
+    # TODO: Dovrebbe essere applicato solo al training secondo me(per adesso viene applicato ad entrambe)
     history_file = os.path.join(data_path, "history.parquet")
     history_df = pl.scan_parquet(history_file)
-    # TODO Cambiato questo
-    if train_df_0 is not None:
-        history_df = train_df_0.lazy().join(history_df, on='user_id', how='left')
-        history_df = history_df.drop('article_id_fixed_right')
-    print(history_df.collect().head())
-    ####
-
     history_df = history_df.rename({"article_id_fixed": "hist_id",
                                     "read_time_fixed": "hist_read_time",
                                     "impression_time_fixed": "hist_time",
                                     "scroll_percentage_fixed": "hist_scroll_percent"})
     history_df = tokenize_seq(history_df, 'hist_id', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
-    # history_df["hist_time"] = history_df["hist_time"].map(
-    #     lambda x: [datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%f") for v in x[-MAX_SEQ_LEN:]])
     history_df = history_df.select(["user_id", "hist_id"])
     history_df = history_df.with_columns(
         pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
@@ -142,18 +132,19 @@ def join_data(data_path, train_df_0=None):
             pl.lit(None).alias("trigger_id"),
             pl.lit(0).alias("click")
         )
-    # TODO Cambio la disposizione, rimetto i clicked per i negative, faccio explode perché polars non accetta liste
     else:
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
-            .rename({"article_ids_inview": "article_id"})
-            .explode('article_id')
-            .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-            # .drop(["article_ids_clicked"])
-            .explode('article_ids_clicked')
+            .collect()
+            .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
+                  inview_col="article_ids_inview", with_replacement=True, seed=123)
+            .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
+            .with_columns(pl.col("article_ids_clicked").map_elements(lambda x: x[0]))
+            .with_columns(pl.col("article_ids_clicked").cast(pl.Int32))
+            .rename({"article_ids_clicked": "article_id"})
         )
     sample_df = (
-        sample_df.collect()
+        sample_df
         .join(news, on='article_id', how="left")
         .join(history_df, on='user_id', how="left")
         .with_columns(
@@ -170,42 +161,21 @@ def join_data(data_path, train_df_0=None):
         )
         .drop(["impression_time", "published_time", "last_modified_time"])
     )
+    sample_df = tokenize_seq(sample_df, 'article_ids_inview', map_feat_id=False)
+    sample_df = tokenize_seq(sample_df, 'labels', map_feat_id=False)
     print(sample_df.columns)
     return sample_df
 
 
-# TODO Ho aggiunto questo
-path = Path("D:/RecSys2024_CTR_Challenge/data/Ebnerd/train")
-train_df_tmp = (
-    ebnerd_from_path(path, history_size=30)
-    .select(COLUMNS)
-    .pipe(
-        sampling_strategy_wu2019,
-        npratio=4,
-        shuffle=True,
-        with_replacement=True,
-        seed=123,
-    )
-    .pipe(create_binary_labels_column)
-    # .sample(n=100)
-)
-# Fino qui
-train_df = join_data(train_path, train_df_tmp)
-
+train_df = join_data(train_path)
 print(train_df.head())
 print("Train samples", train_df.shape)
-# PROVA
-train_df = train_df.sample(fraction=0.001)
-
 train_df.write_csv(f"./{dataset_version}/train.csv")
 del train_df
 
 valid_df = join_data(dev_path)
 print(valid_df.head())
 print("Validation samples", valid_df.shape)
-##
-valid_df = valid_df.sample(fraction=0.01)
-
 valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
 gc.collect()

@@ -1,6 +1,6 @@
 # =========================================================================
 # Copyright (C) 2024. FuxiCTR Authors. All rights reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,6 +13,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+# @tf.function
+# def bpr_loss(x_i, x_j):
+#     """ Create BPR loss for a batch of samples
+#
+#     Args:
+#         x_u (tf.Tensor): tensor containing user representations
+#         x_i (tf.Tensor): tensor containing positive item representations
+#         x_j (tf.Tensor): tensor containing negative item representation
+#
+#     Returns:
+#         loss
+#
+#     Paper: BPR: Bayesian Personalized Ranking from Implicit Feedback
+#     https://arxiv.org/pdf/1205.2618.pdf
+#     """
+#     pos_scores = tf.reduce_sum(x_i, axis=1)
+#     neg_scores = tf.reduce_sum(x_j, axis=1)
+#     xuij = tf.math.log_sigmoid(pos_scores - neg_scores)
+#     loss = tf.negative(tf.reduce_sum(xuij))
+#     return loss
 
 import polars as pl
 import numpy as np
@@ -21,7 +41,6 @@ from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
-
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
@@ -41,6 +60,7 @@ news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
 
+
 def map_feat_id_func(df, column, seq_feat=False):
     feat_set = set(flatten(df[column].to_list()))
     map_dict = dict(zip(list(feat_set), range(1, 1 + len(feat_set))))
@@ -50,12 +70,14 @@ def map_feat_id_func(df, column, seq_feat=False):
         df = df.with_columns(pl.col(column).apply(lambda x: map_dict.get(x, 0)).cast(str))
     return df
 
+
 def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
     df = df.with_columns(pl.col(column).apply(lambda x: x[-max_seq_length:]))
     if map_feat_id:
         df = map_feat_id_func(df, column, seq_feat=True)
     df = df.with_columns(pl.col(column).apply(lambda x: f"{sep}".join(str(i) for i in x)))
     return df
+
 
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
@@ -82,10 +104,11 @@ with open(f"./{dataset_version}/news_info.jsonl", "w") as f:
 
 print("Preprocess behavior data...")
 
+
 def join_data(data_path):
     history_file = os.path.join(data_path, "history.parquet")
     history_df = pl.scan_parquet(history_file)
-    history_df = history_df.rename({"article_id_fixed": "hist_id", 
+    history_df = history_df.rename({"article_id_fixed": "hist_id",
                                     "read_time_fixed": "hist_read_time",
                                     "impression_time_fixed": "hist_time",
                                     "scroll_percentage_fixed": "hist_scroll_percent"})
@@ -95,8 +118,10 @@ def join_data(data_path):
     history_df = history_df.select(["user_id", "hist_id"])
     history_df = history_df.with_columns(
         pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
-        pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias("hist_subcat1"),
-        pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias("hist_sentiment"),
+        pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias(
+            "hist_subcat1"),
+        pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
+            "hist_sentiment"),
         pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias("hist_type")
     )
     history_df = history_df.collect()
@@ -139,6 +164,7 @@ def join_data(data_path):
     )
     print(sample_df.columns)
     return sample_df
+
 
 train_df = join_data(train_path)
 print(train_df.head())
