@@ -22,7 +22,10 @@ from RecSysChallenge2024_DIN.utils.constants import (
     DEFAULT_KNOWN_USER_COL,
     DEFAULT_LABELS_COL,
     DEFAULT_USER_COL,
-    DEFAULT_HISTORY_ARTICLE_ID_COL
+    DEFAULT_HISTORY_ARTICLE_ID_COL,
+    DEFAULT_HISTORY_IMPRESSION_TIMESTAMP_COL,
+    DEFAULT_HISTORY_READ_TIME_COL,
+    DEFAULT_HISTORY_SCROLL_PERCENTAGE_COL
 )
 from RecSysChallenge2024_DIN.utils.python import create_lookup_dict
 
@@ -1185,13 +1188,14 @@ def ebnerd_from_path(path: Path, history_size: int = 30) -> pl.DataFrame:
     """
     df_history = (
         pl.scan_parquet(path.joinpath("history.parquet"))
-        .select(DEFAULT_USER_COL, DEFAULT_HISTORY_ARTICLE_ID_COL)
-        # .pipe(
-        #     #truncate_history,
-        #     column=DEFAULT_HISTORY_ARTICLE_ID_COL,
-        #     history_size=history_size,
-        #     padding_value=0,
-        # )
+        .select(DEFAULT_USER_COL, DEFAULT_HISTORY_ARTICLE_ID_COL, DEFAULT_HISTORY_IMPRESSION_TIMESTAMP_COL,
+                DEFAULT_HISTORY_READ_TIME_COL, DEFAULT_HISTORY_SCROLL_PERCENTAGE_COL)
+        .pipe(
+            truncate_history,
+            column=DEFAULT_HISTORY_ARTICLE_ID_COL,
+            history_size=history_size,
+            padding_value=0,
+        )
     )
     df_behaviors = (
         pl.scan_parquet(path.joinpath("behaviors.parquet"))
