@@ -22,7 +22,6 @@ from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
 
-
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
@@ -41,6 +40,7 @@ news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
 
+
 def map_feat_id_func(df, column, seq_feat=False):
     feat_set = set(flatten(df[column].to_list()))
     map_dict = dict(zip(list(feat_set), range(1, 1 + len(feat_set))))
@@ -50,12 +50,14 @@ def map_feat_id_func(df, column, seq_feat=False):
         df = df.with_columns(pl.col(column).apply(lambda x: map_dict.get(x, 0)).cast(str))
     return df
 
+
 def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
     df = df.with_columns(pl.col(column).apply(lambda x: x[-max_seq_length:]))
     if map_feat_id:
         df = map_feat_id_func(df, column, seq_feat=True)
     df = df.with_columns(pl.col(column).apply(lambda x: f"{sep}".join(str(i) for i in x)))
     return df
+
 
 def impute_list_with_mean(lst):
     non_null_values = [x for x in lst if x not in [None, "null"]]
@@ -64,6 +66,11 @@ def impute_list_with_mean(lst):
         return [x if x is not None else mean_value for x in lst]
     else:
         return lst
+
+
+def encode_date_list(lst):
+    return [x.timestamp() for x in lst]
+
 
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
@@ -90,33 +97,42 @@ with open(f"./{dataset_version}/news_info.jsonl", "w") as f:
 
 print("Preprocess behavior data...")
 
+
 def join_data(data_path):
     history_file = os.path.join(data_path, "history.parquet")
     history_df = pl.scan_parquet(history_file)
-    history_df = history_df.rename({"article_id_fixed": "hist_id", 
+    history_df = history_df.rename({"article_id_fixed": "hist_id",
                                     "read_time_fixed": "hist_read_time",
                                     "impression_time_fixed": "hist_time",
                                     "scroll_percentage_fixed": "hist_scroll_percent"})
 
+    # missing imputation of hist_scroll_percent
     history_df = history_df.with_columns(
         pl.col("hist_scroll_percent").apply(impute_list_with_mean)
     )
-
+    # missing imputation of hist_read_time
     history_df = history_df.with_columns(
         pl.col("hist_read_time").apply(impute_list_with_mean)
     )
+
+    # encoding of hist_time
+    history_df = history_df.with_columns(
+        pl.col("hist_time").apply(encode_date_list)
+    )
+
     history_df = tokenize_seq(history_df, 'hist_id', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
     history_df = tokenize_seq(history_df, 'hist_read_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
     history_df = tokenize_seq(history_df, 'hist_scroll_percent', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
     history_df = tokenize_seq(history_df, 'hist_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
 
-    # history_df = history_df.with_columns(
-    #     pl.col("hist_time").apply(lambda x: [datetime.strptime(v, "%Y-%m-%dT%H:%M:%S.%f") for v in x[-MAX_SEQ_LEN:]]))
-    # history_df = history_df.select(["user_id", "hist_id"])
+    #history_df = history_df.select(["user_id", "hist_id", "hist_read_time", "hist_scroll_percent", "hist_ordinal_time"])
+
     history_df = history_df.with_columns(
         pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
-        pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias("hist_subcat1"),
-        pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias("hist_sentiment"),
+        pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias(
+            "hist_subcat1"),
+        pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
+            "hist_sentiment"),
         pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias("hist_type")
     )
     history_df = history_df.collect()
@@ -159,6 +175,7 @@ def join_data(data_path):
     )
     print(sample_df.columns)
     return sample_df
+
 
 train_df = join_data(train_path)
 print(train_df.head())
