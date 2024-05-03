@@ -115,7 +115,7 @@ class DIN(BaseModel):
         return_dict = self.forward(batch_data)
         y_true = self.get_labels(batch_data)
         y_pred = return_dict["y_pred"]
-        real_batch_size = int(y_pred.shape[0] / 5)  # 5 deve essere sostituito con npratio
+        real_batch_size = int(y_pred.shape[0] / 2)  # 5 deve essere sostituito con npratio
         loss = self.compute_loss(y_pred.reshape(real_batch_size, -1), y_true.reshape(real_batch_size, -1))
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)

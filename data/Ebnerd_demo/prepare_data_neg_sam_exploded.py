@@ -136,7 +136,7 @@ def join_data(data_path):
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
             .collect()
-            .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
+            .pipe(sampling_strategy_wu2019, npratio=1, shuffle=False, clicked_col="article_ids_clicked",
                   inview_col="article_ids_inview", with_replacement=True, seed=123)
             .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
             .pipe(reorder_lists, 'article_ids_inview', 'labels')
@@ -166,8 +166,8 @@ def join_data(data_path):
         )
         .drop(["impression_time", "published_time", "last_modified_time"])
     )
-    #sample_df = tokenize_seq(sample_df, 'labels',
-                             #map_feat_id=False)  # Da rimuovere perchè non ci serve,tengo solo per non modificare il file di configurazione
+    # sample_df = tokenize_seq(sample_df, 'labels',
+    # map_feat_id=False)  # Da rimuovere perchè non ci serve,tengo solo per non modificare il file di configurazione
     print(sample_df.columns)
     return sample_df
 
