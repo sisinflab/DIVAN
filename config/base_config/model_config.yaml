@@ -92,7 +92,7 @@ DIN_default: # This is a config template
     net_dropout: 0
     batch_norm: False
     epochs: 100
-    shuffle: True
+    shuffle: False
     seed: 2019
     monitor: {'AUC': 1, 'logloss': -1}
     monitor_mode: 'max'

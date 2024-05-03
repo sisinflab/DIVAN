@@ -5,16 +5,16 @@ import warnings
 import datetime
 import inspect
 
-from RecSysChallenge2024_DIN.utils.polars import (
+from utils.polars import (
     _check_columns_in_df,
     drop_nulls_from_list,
     generate_unique_name,
     shuffle_list_column,
 )
 import polars as pl
-from RecSysChallenge2024_DIN.utils.polars import slice_join_dataframes
+from utils.polars import slice_join_dataframes
 
-from RecSysChallenge2024_DIN.utils.constants import (
+from utils.constants import (
     DEFAULT_IMPRESSION_TIMESTAMP_COL,
     DEFAULT_CLICKED_ARTICLES_COL,
     DEFAULT_INVIEW_ARTICLES_COL,
@@ -24,7 +24,25 @@ from RecSysChallenge2024_DIN.utils.constants import (
     DEFAULT_USER_COL,
     DEFAULT_HISTORY_ARTICLE_ID_COL
 )
-from RecSysChallenge2024_DIN.utils.python import create_lookup_dict
+from utils.python import create_lookup_dict
+
+
+def reorder_lists(df: pl.DataFrame, article_col: str, label_col: str):
+    def reorder(article_ids_inview, labels):
+        combined = list(zip(labels, article_ids_inview))
+        sorted_combined = sorted(combined, key=lambda x: -x[0])
+        sorted_labels, sorted_article_ids = zip(*sorted_combined)
+        return list(sorted_article_ids)
+
+        # Apply the function using Polars apply method
+
+    # reordered_data = pl.apply([df[article_col], df[label_col]], reorder)
+    df = df.with_columns(
+        pl.struct([article_col, label_col]).map_elements(lambda x: reorder(x[article_col], x[label_col])).alias(
+            "article_ids_ordered"))
+
+    # Apply the function using Polars apply method
+    return df
 
 
 def create_binary_labels_column(

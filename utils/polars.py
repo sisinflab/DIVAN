@@ -7,7 +7,7 @@ try:
 except ImportError:
     print("polars not available")
 
-from RecSysChallenge2024_DIN.utils.python import generate_unique_name
+from utils.python import generate_unique_name
 
 
 def _check_columns_in_df(df: pl.DataFrame, columns: list[str]) -> None:
@@ -32,8 +32,6 @@ def _check_columns_in_df(df: pl.DataFrame, columns: list[str]) -> None:
         raise ValueError(
             f"Invalid input provided. The DataFrame does not contain columns {columns_not_in_df}."
         )
-
-
 
 
 def _validate_equal_list_column_lengths(df: pl.DataFrame, col1: str, col2: str) -> bool:

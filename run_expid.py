@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_{dataset}_x1_001_fa511cb2',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_{dataset}_x1_001_88960fb0',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
@@ -60,7 +60,7 @@ if __name__ == '__main__':
         # Build feature_map and transform data
         feature_encoder = FeatureProcessor(**params)
 
-        params["train_data"], params["valid_data"],params["test_data"] = \
+        params["train_data"], params["valid_data"], params["test_data"] = \
             build_dataset(feature_encoder, **params)
     feature_map = FeatureMap(params['dataset_id'], data_dir)
     feature_map.load(feature_map_json, params)

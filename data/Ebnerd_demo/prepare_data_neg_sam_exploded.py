@@ -1,6 +1,6 @@
 # =========================================================================
 # Copyright (C) 2024. FuxiCTR Authors. All rights reserved.
-# 
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -23,17 +23,17 @@ from sklearn.decomposition import PCA
 import gc
 
 from utils.functions import (sampling_strategy_wu2019, create_binary_labels_column,
-                                                     ebnerd_from_path, flatten_single_value_list_column)
+                             ebnerd_from_path, flatten_single_value_list_column, reorder_lists)
 from utils.constants import (DEFAULT_USER_COL,
-                                                     DEFAULT_HISTORY_ARTICLE_ID_COL,
-                                                     DEFAULT_INVIEW_ARTICLES_COL,
-                                                     DEFAULT_CLICKED_ARTICLES_COL)
+                             DEFAULT_HISTORY_ARTICLE_ID_COL,
+                             DEFAULT_INVIEW_ARTICLES_COL,
+                             DEFAULT_CLICKED_ARTICLES_COL)
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-dataset_version = "Ebnerd_demo_x1"
+dataset_version = "Ebnerd_demo_x2"
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
 MAX_SEQ_LEN = 50
@@ -92,13 +92,13 @@ with open(f"./{dataset_version}/news_info.jsonl", "w") as f:
 print("Preprocess behavior data...")
 
 """
-La funzione join_data è stata modificata per creare un dataset in una forma utile per applicare una triplet loss
-1) Applico il sampling_wu preso dalla funzioni fornite dal github della challenge
-2) Prima ogni training sample era costituito da un solo candidato e la corrispettiva label da predire
-3) Ogni training sample ha un solo elemento cliccato(potenzialmente da cambiare) e negative sample(campionati dall'inview)
-4) L'idea è quindi applicare una loss come la Triplet per avvicinare il vettore che il nostro modello da in output da quello cliccato
-e al contrario allontanarlo dagli altri
-VEDERE in Ebnerd_demo_x1/train.csv il risultato ottenuto per adesso
+Script che prende il dataset e la trasforma nella sua versione esplosa
+1) Per ogni elemento viene fatto negative sampling e quindi ogni riga ha un campione positivo e nratio negativi
+2) Creo le binary labels(setto ad 1) solo il positivo(clicked)
+3) Ordino gli elementi dell'inview mettendo come primo quello cliccato
+4) Esplodo quelli dell'inview dopo averli ordinato
+5) Rimuovo tutte le colonne non utili
+#N.B: per adesso lascio labels solo per non fare rompere il modello ma di fatto non la usiamo
 """
 
 
@@ -139,9 +139,14 @@ def join_data(data_path):
             .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
                   inview_col="article_ids_inview", with_replacement=True, seed=123)
             .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
-            .with_columns(pl.col("article_ids_clicked").map_elements(lambda x: x[0]))
-            .with_columns(pl.col("article_ids_clicked").cast(pl.Int32))
-            .rename({"article_ids_clicked": "article_id"})
+            .pipe(reorder_lists, 'article_ids_inview', 'labels')
+            .drop("article_ids_inview")
+            .drop("labels")
+            .rename({"article_ids_ordered": "article_id"})
+            .explode("article_id")
+            .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
+            .drop("article_ids_clicked")
+            .with_columns(pl.col("article_id").cast(pl.Int32))
         )
     sample_df = (
         sample_df
@@ -161,8 +166,8 @@ def join_data(data_path):
         )
         .drop(["impression_time", "published_time", "last_modified_time"])
     )
-    sample_df = tokenize_seq(sample_df, 'article_ids_inview', map_feat_id=False)
-    sample_df = tokenize_seq(sample_df, 'labels', map_feat_id=False)
+    #sample_df = tokenize_seq(sample_df, 'labels',
+                             #map_feat_id=False)  # Da rimuovere perchè non ci serve,tengo solo per non modificare il file di configurazione
     print(sample_df.columns)
     return sample_df
 
