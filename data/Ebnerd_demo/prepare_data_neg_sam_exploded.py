@@ -22,18 +22,13 @@ from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
 
-from utils.functions import (sampling_strategy_wu2019, create_binary_labels_column,
-                             ebnerd_from_path, flatten_single_value_list_column, reorder_lists)
-from utils.constants import (DEFAULT_USER_COL,
-                             DEFAULT_HISTORY_ARTICLE_ID_COL,
-                             DEFAULT_INVIEW_ARTICLES_COL,
-                             DEFAULT_CLICKED_ARTICLES_COL)
+from utils.functions import (sampling_strategy_wu2019, create_binary_labels_column, reorder_lists)
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-dataset_version = "Ebnerd_demo_x2"
+dataset_version = "Ebnerd_demo_x1"
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
 MAX_SEQ_LEN = 50
@@ -103,7 +98,6 @@ Script che prende il dataset e la trasforma nella sua versione esplosa
 
 
 def join_data(data_path):
-    # TODO: Dovrebbe essere applicato solo al training secondo me(per adesso viene applicato ad entrambe)
     history_file = os.path.join(data_path, "history.parquet")
     history_df = pl.scan_parquet(history_file)
     history_df = history_df.rename({"article_id_fixed": "hist_id",
@@ -131,18 +125,28 @@ def join_data(data_path):
         sample_df = sample_df.with_columns(
             pl.lit(None).alias("trigger_id"),
             pl.lit(0).alias("click")
-        )
+        ).collect()
+    elif "validation/" in data_path:
+        sample_df = (
+            sample_df.rename({"article_id": "trigger_id"})
+            .rename({"article_ids_inview": "article_id"})
+            .explode('article_id')
+            .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
+            .drop(["article_ids_clicked"])
+        ).collect()
     else:
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
             .collect()
-            .pipe(sampling_strategy_wu2019, npratio=1, shuffle=False, clicked_col="article_ids_clicked",
+            .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
                   inview_col="article_ids_inview", with_replacement=True, seed=123)
+            .with_columns(pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(pl.Int32).cast(pl.String))
+            .with_columns(pl.col("impression_id").cast(pl.Int64))
             .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
-            .pipe(reorder_lists, 'article_ids_inview', 'labels')
-            .drop("article_ids_inview")
+            #.pipe(reorder_lists, 'article_ids_inview', 'labels')
+            #.drop("article_ids_inview")
             .drop("labels")
-            .rename({"article_ids_ordered": "article_id"})
+            .rename({"article_ids_inview": "article_id"})
             .explode("article_id")
             .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
             .drop("article_ids_clicked")
