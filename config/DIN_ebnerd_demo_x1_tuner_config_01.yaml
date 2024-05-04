@@ -1,13 +1,13 @@
 base_config: ./config/base_config/
-base_expid: DIN_default
+base_expid: DIN_bpr  # DIN_default
 dataset_id: ebnerd_demo_x1
 
 dataset_config:
   ebnerd_demo_x1:
     data_root: ./data/Ebnerd_demo/
     data_format: csv
-    train_data: ./data/Ebnerd_demo/Ebnerd_demo_x2/train.csv
-    valid_data: ./data/Ebnerd_demo/Ebnerd_demo_x2/valid.csv
+    train_data: ./data/Ebnerd_demo/Ebnerd_demo_x1/train.csv
+    valid_data: ./data/Ebnerd_demo/Ebnerd_demo_x1/valid.csv
     #test_data: ./data//Ebnerd_large_x1/test.csv
     min_categr_count: 10
     data_block_size: 100000
@@ -88,7 +88,7 @@ tuner_space:
   net_dropout: 0.1
   batch_norm: False
   learning_rate: 1.e-3
-  batch_size: 8192
+  batch_size: 10000
   seed: 20242025
   group_id: impression_id
   metrics: [ [ avgAUC, MRR, NDCG(k=5) ] ]

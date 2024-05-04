@@ -14,17 +14,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+import numpy as np
+import pandas as pd
 import torch
 from torch import nn
 from pandas.core.common import flatten
 from fuxictr.pytorch.models import BaseModel
 from fuxictr.pytorch.layers import FeatureEmbeddingDict, MLP_Block, DIN_Attention, Dice
+from utils.bpr import BPRLoss
+from fuxictr.pytorch.torch_utils import get_optimizer, get_loss
 
 
-class DIN(BaseModel):
+class DIN_bpr(BaseModel):
     def __init__(self,
                  feature_map,
-                 model_id="DIN",
+                 model_id="DIN_bpr",
                  gpu=-1,
                  dnn_hidden_units=[512, 128, 64],
                  dnn_activations="ReLU",
@@ -42,7 +46,7 @@ class DIN(BaseModel):
                  embedding_regularizer=None,
                  net_regularizer=None,
                  **kwargs):
-        super(DIN, self).__init__(feature_map,
+        super(DIN_bpr, self).__init__(feature_map,
                                   model_id=model_id,
                                   gpu=gpu,
                                   embedding_regularizer=embedding_regularizer,
@@ -80,6 +84,7 @@ class DIN(BaseModel):
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
         self.reset_parameters()
         self.model_to_device()
+        self.loss_name = kwargs["loss"]
 
     def forward(self, inputs):
         X = self.get_inputs(inputs)
@@ -99,6 +104,24 @@ class DIN(BaseModel):
         return_dict = {"y_pred": y_pred}
         return return_dict
 
+    def train_step(self, batch_data):
+        self.optimizer.zero_grad()
+        return_dict = self.forward(batch_data)
+        y_true = self.get_labels(batch_data)
+
+        if self.loss_name == 'bpr':
+            y_true = y_true.data.cpu().numpy().reshape(-1)
+            y_pred = return_dict["y_pred"].data.cpu().numpy().reshape(-1)
+            group_id = self.get_group_id(batch_data).data.cpu().numpy().reshape(-1)
+            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true, y_pred)
+            loss = self.compute_loss(return_dict_grouped, y_true_grouped)
+        else:
+            loss = self.compute_loss(return_dict, y_true)
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
+        self.optimizer.step()
+        return loss
+
     @staticmethod
     def get_embedding(field, feature_emb_dict):
         if type(field) == tuple:
@@ -106,3 +129,29 @@ class DIN(BaseModel):
             return torch.cat(emb_list, dim=-1)
         else:
             return feature_emb_dict[field]
+
+
+    def compile(self, optimizer, loss, lr):
+        self.optimizer = get_optimizer(optimizer, self.parameters(), lr)
+        if loss == 'bpr':
+            self.loss_fn = BPRLoss(max_positives=5)  # max_positives = npratio + 1
+        else:
+            self.loss_fn = get_loss(loss)
+
+    def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
+        score_df = pd.DataFrame({"group_index": group_id,
+                                 "y_true": y_true,
+                                 "y_pred": y_pred})
+
+        idxs = []
+        y_true_list = []
+        y_pred_list = []
+
+        for idx, df in score_df.groupby("group_index"):
+            idxs.append(idx)
+            y_true_list.append(df['y_true'].values)
+            y_pred_list.append(df['y_pred'].values)
+
+        return_dict = {'y_pred': torch.Tensor(np.array(y_pred_list))}
+
+        return return_dict, torch.Tensor(np.array(y_true_list))

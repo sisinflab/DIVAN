@@ -92,8 +92,36 @@ DIN_default: # This is a config template
     net_dropout: 0
     batch_norm: False
     epochs: 100
-    shuffle: False
+    shuffle: True
     seed: 2019
     monitor: {'AUC': 1, 'logloss': -1}
     monitor_mode: 'max'
 
+DIN_bpr: # This is a config template
+    model: DIN_bpr
+    dataset_id: TBD
+    loss: 'bpr'
+    metrics: ['logloss', 'AUC']
+    task: binary_classification
+    optimizer: adam
+    learning_rate: 1.0e-3
+    embedding_regularizer: 0
+    net_regularizer: 0
+    batch_size: 10000
+    embedding_dim: 40
+    dnn_hidden_units: [500, 500, 500]
+    dnn_activations: relu
+    attention_hidden_units: [64]
+    attention_hidden_activations: "Dice"
+    attention_output_activation: null
+    attention_dropout: 0
+    din_target_field: item_id
+    din_sequence_field: click_history
+    din_use_softmax: False
+    net_dropout: 0
+    batch_norm: False
+    epochs: 100
+    shuffle: False
+    seed: 2019
+    monitor: {'AUC': 1, 'logloss': -1}
+    monitor_mode: 'max'
