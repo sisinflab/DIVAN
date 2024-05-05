@@ -219,4 +219,40 @@ item_dict = {
 print("Save contrast_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/contrast_emb_dim64.npz", **item_dict)
 
+
+def create_inviews_vectors(behavior_df):
+    inviews_ids = behavior_df.select('impression_id', 'article_ids_inview').collect()
+    inviews_vectors = []
+    for inview in inviews_ids['article_ids_inview'].to_list():
+        inview_vectors = []
+        for item_id in inview:
+            inview_vectors.append(contrast_emb_df.filter(pl.col('article_id') == item_id)['contrastive_vector'].to_list())
+        inviews_vectors.append(np.array(inview_vectors).mean(axis=0))
+    return inviews_ids["impression_id"], np.array(inviews_vectors).squeeze(axis=1)
+
+
+print("Create a representation of the inviews")
+behavior_file_train = os.path.join(train_path, "behaviors.parquet")
+behavior_df_train = pl.scan_parquet(behavior_file_train)
+
+behavior_file_val = os.path.join(dev_path, "behaviors.parquet")
+behavior_df_val = pl.scan_parquet(behavior_file_val)
+
+#behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+#behavior_df_test = pl.scan_parquet(behavior_file_test)
+
+behavior_df = pl.concat([behavior_df_train, behavior_df_val])  # behavior_df_test
+behavior_df = behavior_df.unique(subset=['impression_id'])
+
+impr_ids, inviews_vectors = create_inviews_vectors(behavior_df)
+inviews_emb = pca.fit_transform(inviews_vectors)
+print("inviews_emb.shape", inviews_emb.shape)
+item_dict = {
+    "key": impr_ids.cast(str),
+    "value": inviews_emb
+}
+print("Save inviews_emb_dim64.npz...")
+np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
+
+
 print("All done.")
