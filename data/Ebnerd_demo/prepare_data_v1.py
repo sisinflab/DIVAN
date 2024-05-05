@@ -77,7 +77,9 @@ news = news.select(['article_id', 'published_time', 'last_modified_time', 'premi
                     'total_inviews', 'total_pageviews', 'total_read_time',
                     'sentiment_score', 'sentiment_label'])
 news = (
-    news.with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
+    news
+    .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
+    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
     .collect()
 )
 news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))

@@ -31,6 +31,7 @@ dataset_config:
             - {name: subcategory, active: True, dtype: str, type: sequence, splitter: ^, max_len: 5, padding: pre}
             - {name: total_inviews, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: total_pageviews, active: False, dtype: float, type: numeric, fill_na: 0}
+            - {name: pageviews_inviews_ratio, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: total_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: sentiment_score, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: sentiment_label, active: True, dtype: str, type: categorical}
