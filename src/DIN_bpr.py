@@ -134,7 +134,7 @@ class DIN_bpr(BaseModel):
     def compile(self, optimizer, loss, lr):
         self.optimizer = get_optimizer(optimizer, self.parameters(), lr)
         if loss == 'bpr':
-            self.loss_fn = BPRLoss(max_positives=5)  # max_positives = npratio + 1
+            self.loss_fn = BPRLoss(max_positives=1)  # max_positives = npratio + 1
         else:
             self.loss_fn = get_loss(loss)
 
