@@ -1,5 +1,5 @@
 base_config: ./config/base_config/
-base_expid: DIN_bpr  # DIN_default
+base_expid: DIN_default
 dataset_id: ebnerd_demo_x1
 
 dataset_config:
