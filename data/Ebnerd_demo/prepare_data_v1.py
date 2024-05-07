@@ -74,12 +74,12 @@ def encode_date_list(lst):
 
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
-                    'total_inviews', 'total_pageviews', 'total_read_time',
+#                    'total_inviews', 'total_pageviews', 'total_read_time',
                     'sentiment_score', 'sentiment_label'])
 news = (
     news
     .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
-    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
+#    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
     .collect()
 )
 news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))
@@ -140,6 +140,7 @@ def join_data(data_path):
     history_df = history_df.collect()
     behavior_file = os.path.join(data_path, "behaviors.parquet")
     sample_df = pl.scan_parquet(behavior_file)
+    sample_df.drop("gender", "postcode", "age")
     if "test/" in data_path:
         sample_df = (
             sample_df.rename({"article_ids_inview": "article_id"})

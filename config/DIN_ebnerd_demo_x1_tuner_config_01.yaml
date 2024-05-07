@@ -19,9 +19,9 @@ dataset_config:
             - {name: trigger_id, active: True, dtype: str, type: categorical}
             - {name: device_type, active: True, dtype: str, type: categorical}
             - {name: is_sso_user, active: True, dtype: str, type: categorical}
-            - {name: gender, active: True, dtype: str, type: categorical}
-            - {name: postcode, active: True, dtype: str, type: categorical}
-            - {name: age, active: True, dtype: str, type: categorical}
+            #- {name: gender, active: True, dtype: str, type: categorical}
+            #- {name: postcode, active: True, dtype: str, type: categorical}
+            #- {name: age, active: True, dtype: str, type: categorical}
             - {name: is_subscriber, active: True, dtype: str, type: categorical}
             - {name: premium, active: True, dtype: str, type: categorical}
             - {name: article_type, active: True, dtype: str, type: categorical}
@@ -29,10 +29,10 @@ dataset_config:
             - {name: topics, active: True, dtype: str, type: sequence, splitter: ^, max_len: 5, padding: pre}
             - {name: category, active: True, dtype: str, type: categorical}
             - {name: subcategory, active: True, dtype: str, type: sequence, splitter: ^, max_len: 5, padding: pre}
-            - {name: total_inviews, active: False, dtype: float, type: numeric, fill_na: 0}
-            - {name: total_pageviews, active: False, dtype: float, type: numeric, fill_na: 0}
-            - {name: pageviews_inviews_ratio, active: False, dtype: float, type: numeric, fill_na: 0}
-            - {name: total_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
+            #- {name: total_inviews, active: False, dtype: float, type: numeric, fill_na: 0}
+            #- {name: total_pageviews, active: False, dtype: float, type: numeric, fill_na: 0}
+            #- {name: pageviews_inviews_ratio, active: False, dtype: float, type: numeric, fill_na: 0}
+            #- {name: total_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: sentiment_score, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: sentiment_label, active: True, dtype: str, type: categorical}
             - {name: subcat1, active: True, dtype: str, type: categorical}
