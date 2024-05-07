@@ -126,14 +126,6 @@ def join_data(data_path):
             pl.lit(None).alias("trigger_id"),
             pl.lit(0).alias("click")
         ).collect()
-    elif "validation/" in data_path:
-        sample_df = (
-            sample_df.rename({"article_id": "trigger_id"})
-            .rename({"article_ids_inview": "article_id"})
-            .explode('article_id')
-            .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-            .drop(["article_ids_clicked"])
-        ).collect()
     else:
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
