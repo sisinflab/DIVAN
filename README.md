@@ -1,5 +1,14 @@
 ## RecSysChallenge2024_DIN
 
+### Environment
+
+Please set up the environment as follows.
+```
+conda create -n recsys_din python==3.9
+pip install -r requirements.txt
+source activate recsys_din
+```
+
 ### Data Preparation
 
 1. Download the datasets at: https://recsys.eb.dk/#dataset
@@ -33,15 +42,6 @@
     cd ~/RecSys2024_CTR_Challenge/data/Ebnerd_large/
     python prepare_data_v1.py
     ```
-
-### Environment
-
-Please set up the environment as follows.
-```
-conda create -n recsys_din python==3.9
-pip install -r requirements.txt
-source activate recsys_din
-```
 
 ### Version 1
 

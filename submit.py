@@ -50,8 +50,8 @@ if __name__ == '__main__':
     ''' Usage: python run_expid.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='./config/', help='The config directory.')
-    parser.add_argument('--expid', type=str, default='DeepFM_test', help='The experiment id to run.')
+    parser.add_argument('--config', type=str, default='./config/DIN_ebnerd_demo_x1_tuner_config_01', help='The config directory.')
+    parser.add_argument('--expid', type=str, default='DIN_ebnerd_demo_x1_001_3c318e74', help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
     
@@ -75,13 +75,13 @@ if __name__ == '__main__':
     
     model_class = getattr(src, params['model'])
     model = model_class(feature_map, **params)
-    model.count_parameters() # print number of parameters used in model
+    model.count_parameters()  # print number of parameters used in model
     model.to(device=model.device)
     model.load_weights(model.checkpoint)
     
     params["batch_size"] = 16000
     test_gen = RankDataLoader(feature_map, stage='test', **params).make_iterator()
-    ans = pl.scan_csv("./data/Ebnerd_large_x1/test.csv")
+    ans = pl.scan_csv("./data/Ebnerd_demo/Ebnerd_demo_x1/test.csv")
     ans = ans.select(['impression_id', 'user_id']).collect().to_pandas()
     logging.info("Predicting scores...")
     ans["score"] = model.predict(test_gen)
