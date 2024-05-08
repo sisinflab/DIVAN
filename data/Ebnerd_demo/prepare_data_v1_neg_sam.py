@@ -80,6 +80,20 @@ def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
     return df
 
 
+def append_to_list(lst):
+    samples = pl.Series(news.select("article_id").sample(n=10))
+    lst.extend(samples)
+    return lst
+
+
+def add_soft_neg_samples(df):
+    # Adding the soft negative samples in article_ids_inview column
+
+    df = df.with_columns(pl.col("article_ids_inview").apply(append_to_list))
+
+    return df
+
+
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
                     'total_inviews', 'total_pageviews', 'total_read_time',
@@ -141,6 +155,7 @@ def join_data(data_path, history_df=None):
         history_df = (
             history_df.rename({"article_id": "trigger_id"})
             .rename({"article_ids_inview": "article_id"})
+            .with_columns(pl.col("article_id").apply(append_to_list))
             .explode('article_id')
             .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
             .drop(["article_ids_clicked"])
