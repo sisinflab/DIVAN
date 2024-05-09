@@ -21,15 +21,22 @@ from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
+from utils.download_dataset import download_ebnerd_dataset
+
+dataset_size = 'demo'  # small, large
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-dataset_version = "Ebnerd_demo_x1"
+
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
+
+dataset_version = "Ebnerd_demo_x1"
 MAX_SEQ_LEN = 50
+
+download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, test_path=test_path)
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
