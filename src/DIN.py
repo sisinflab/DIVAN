@@ -50,11 +50,11 @@ class DIN(BaseModel):
                  net_regularizer=None,
                  **kwargs):
         super(DIN, self).__init__(feature_map,
-                                      model_id=model_id,
-                                      gpu=gpu,
-                                      embedding_regularizer=embedding_regularizer,
-                                      net_regularizer=net_regularizer,
-                                      **kwargs)
+                                  model_id=model_id,
+                                  gpu=gpu,
+                                  embedding_regularizer=embedding_regularizer,
+                                  net_regularizer=net_regularizer,
+                                  **kwargs)
         if not isinstance(din_target_field, list):
             din_target_field = [din_target_field]
         self.din_target_field = din_target_field
@@ -158,7 +158,7 @@ class DIN(BaseModel):
 
         return return_dict, torch.Tensor(np.array(y_true_list))
 
-    def evaluate(self, data_generator, metrics=None):
+    def evaluate(self, data_generator, epoch, metrics=None):
         val_loss = 0
         self.eval()  # set to evaluation mode
         with torch.no_grad():
@@ -192,6 +192,7 @@ class DIN(BaseModel):
             y_pred = np.array(y_pred_list, np.float64)
             y_true = np.array(y_true_list, np.float64)
             group_id = np.array(group_id_list) if len(group_id) > 0 else None
+            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), epoch)
 
             if metrics is not None:
                 val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
