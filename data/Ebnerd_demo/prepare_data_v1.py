@@ -264,5 +264,11 @@ item_dict = {
 print("Save inviews_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 
+# remove unuseful files and directories
+os.removedirs("train")
+os.removedirs("test")
+os.removedirs("validation")
+os.remove("contrastive_vector.parquet")
+os.remove("image_embeddings.parquet")
 
 print("All done.")
