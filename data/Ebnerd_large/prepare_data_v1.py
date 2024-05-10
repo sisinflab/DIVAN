@@ -21,15 +21,22 @@ from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
+from utils.download_dataset import download_ebnerd_dataset
+
+dataset_size = 'large'  # demo, small, large
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-dataset_version = "Ebnerd_large_x1"
+
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
+
+dataset_version = "Ebnerd_large_x1"
 MAX_SEQ_LEN = 50
+
+download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -257,5 +264,11 @@ item_dict = {
 print("Save inviews_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 
+# remove unuseful files and directories
+os.removedirs("train")
+os.removedirs("test")
+os.removedirs("validation")
+os.remove("contrastive_vector.parquet")
+os.remove("image_embeddings.parquet")
 
 print("All done.")
