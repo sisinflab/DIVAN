@@ -81,12 +81,12 @@ def encode_date_list(lst):
 
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
-#                    'total_inviews', 'total_pageviews', 'total_read_time',
+                    #                    'total_inviews', 'total_pageviews', 'total_read_time',
                     'sentiment_score', 'sentiment_label'])
 news = (
     news
     .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
-#    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
+    #    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
     .collect()
 )
 news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))
@@ -134,7 +134,7 @@ def join_data(data_path):
     history_df = tokenize_seq(history_df, 'hist_scroll_percent', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
     history_df = tokenize_seq(history_df, 'hist_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
 
-    #history_df = history_df.select(["user_id", "hist_id", "hist_read_time", "hist_scroll_percent", "hist_ordinal_time"])
+    # history_df = history_df.select(["user_id", "hist_id", "hist_read_time", "hist_scroll_percent", "hist_ordinal_time"])
 
     history_df = history_df.with_columns(
         pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
@@ -236,7 +236,8 @@ def create_inviews_vectors(behavior_df):
     for inview in inviews_ids['article_ids_inview'].to_list():
         inview_vectors = []
         for item_id in inview:
-            inview_vectors.append(contrast_emb_df.filter(pl.col('article_id') == item_id)['contrastive_vector'].to_list())
+            inview_vectors.append(
+                contrast_emb_df.filter(pl.col('article_id') == item_id)['contrastive_vector'].to_list())
         inviews_vectors.append(np.array(inview_vectors).mean(axis=0))
     return inviews_ids["impression_id"], np.array(inviews_vectors).squeeze(axis=1)
 
@@ -248,8 +249,8 @@ behavior_df_train = pl.scan_parquet(behavior_file_train)
 behavior_file_val = os.path.join(dev_path, "behaviors.parquet")
 behavior_df_val = pl.scan_parquet(behavior_file_val)
 
-#behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-#behavior_df_test = pl.scan_parquet(behavior_file_test)
+# behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+# behavior_df_test = pl.scan_parquet(behavior_file_test)
 
 behavior_df = pl.concat([behavior_df_train, behavior_df_val])  # behavior_df_test
 behavior_df = behavior_df.unique(subset=['impression_id'])
@@ -265,8 +266,16 @@ print("Save inviews_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 
 # remove unuseful files and directories
+os.remove('train/behaviors.parquet')
+os.remove('train/history.parquet')
+os.remove('train/articles.parquet')
 os.removedirs("train")
+os.remove('test/behaviors.parquet')
+os.remove('test/history.parquet')
+os.remove('test/articles.parquet')
 os.removedirs("test")
+os.remove('validation/behaviors.parquet')
+os.remove('validation/history.parquet')
 os.removedirs("validation")
 os.remove("contrastive_vector.parquet")
 os.remove("image_embeddings.parquet")
