@@ -21,7 +21,7 @@ from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
-from download_dataset import download_ebnerd_dataset
+from utils.download_dataset import download_ebnerd_dataset
 
 dataset_size = 'demo'  # small, large
 
