@@ -13,26 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-# @tf.function
-# def bpr_loss(x_i, x_j):
-#     """ Create BPR loss for a batch of samples
-#
-#     Args:
-#         x_u (tf.Tensor): tensor containing user representations
-#         x_i (tf.Tensor): tensor containing positive item representations
-#         x_j (tf.Tensor): tensor containing negative item representation
-#
-#     Returns:
-#         loss
-#
-#     Paper: BPR: Bayesian Personalized Ranking from Implicit Feedback
-#     https://arxiv.org/pdf/1205.2618.pdf
-#     """
-#     pos_scores = tf.reduce_sum(x_i, axis=1)
-#     neg_scores = tf.reduce_sum(x_j, axis=1)
-#     xuij = tf.math.log_sigmoid(pos_scores - neg_scores)
-#     loss = tf.negative(tf.reduce_sum(xuij))
-#     return loss
 
 import polars as pl
 import numpy as np

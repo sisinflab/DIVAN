@@ -1112,3 +1112,25 @@ def ebnerd_from_path(path: Path, history_size: int = 30) -> pl.DataFrame:
         )
     )
     return df_behaviors
+
+
+def append_to_list(lst: list, news_df: pl.DataFrame, n_samples: int):
+    """
+    NEW!!!
+    Function to extend a list with a number of article_ids taken from a news_df
+    Args:
+        lst:
+        news_df:
+
+    Returns:
+
+    """
+    lst = list(lst)
+    samples = pl.Series(news_df.select("article_id").collect().sample(n=n_samples)).to_list()
+    lst.extend(samples)
+    return lst
+
+
+def add_soft_neg_samples(df: pl.DataFrame, n_samples: int, news_df: pl.DataFrame):
+    df = df.with_columns(pl.col("article_ids_inview").map_elements(lambda x: append_to_list(x, news_df, n_samples)))
+    return df

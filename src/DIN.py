@@ -26,6 +26,7 @@ from fuxictr.pytorch.torch_utils import get_optimizer, get_loss
 import logging
 from tqdm import tqdm
 import sys
+from torch.utils.tensorboard import SummaryWriter
 
 
 class DIN(BaseModel):
@@ -125,6 +126,62 @@ class DIN(BaseModel):
         self.optimizer.step()
         return loss
 
+    def fit(self, data_generator, epochs=1, validation_data=None,
+            max_gradient_norm=10., **kwargs):
+        self.writer = SummaryWriter()  # NEW LINE HERE
+        self.valid_gen = validation_data
+        self._max_gradient_norm = max_gradient_norm
+        self._best_metric = np.Inf if self._monitor_mode == "min" else -np.Inf
+        self._stopping_steps = 0
+        self._steps_per_epoch = len(data_generator)
+        self._stop_training = False
+        self._total_steps = 0
+        self._batch_index = 0
+        self._epoch_index = 0
+        if self._eval_steps is None:
+            self._eval_steps = self._steps_per_epoch
+
+        logging.info("Start training: {} batches/epoch".format(self._steps_per_epoch))
+        logging.info("************ Epoch=1 start ************")
+        for epoch in range(epochs):
+            self._epoch_index = epoch
+            self.train_epoch(data_generator)
+            if self._stop_training:
+                break
+            else:
+                logging.info("************ Epoch={} end ************".format(self._epoch_index + 1))
+        logging.info("Training finished.")
+        logging.info("Load best model: {}".format(self.checkpoint))
+        self.writer.close()
+        self.load_weights(self.checkpoint)
+
+    def train_epoch(self, data_generator):
+        self._batch_index = 0
+        train_loss = 0
+        self.train()
+        if self._verbose == 0:
+            batch_iterator = data_generator
+        else:
+            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
+        for batch_index, batch_data in enumerate(batch_iterator):
+            self._batch_index = batch_index
+            self._total_steps += 1
+            loss = self.train_step(batch_data)
+            train_loss += loss.item()
+            if self._total_steps % self._eval_steps == 0:
+                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
+                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
+                train_loss = 0
+                self.eval_step()
+            if self._stop_training:
+                break
+
+    def eval_step(self):
+        logging.info('Evaluation @epoch {} - batch {}: '.format(self._epoch_index + 1, self._batch_index + 1))
+        val_logs = self.evaluate(self.valid_gen, metrics=self._monitor.get_metrics())
+        self.checkpoint_and_earlystop(val_logs)
+        self.train()
+
     @staticmethod
     def get_embedding(field, feature_emb_dict):
         if type(field) == tuple:
@@ -158,46 +215,46 @@ class DIN(BaseModel):
 
         return return_dict, torch.Tensor(np.array(y_true_list))
 
-    def evaluate(self, data_generator, epoch, metrics=None):
-        val_loss = 0
-        self.eval()  # set to evaluation mode
-        with torch.no_grad():
-            y_pred_list = []
-            y_true_list = []
-            group_id_list = []
-            if self._verbose > 0:
-                data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
-            for batch_data in data_generator:
-                return_dict = self.forward(batch_data)
-                y_pred = return_dict["y_pred"].data.cpu().numpy().reshape(-1)
-                y_true = self.get_labels(batch_data).data.cpu().numpy().reshape(-1)
-                group_id = self.get_group_id(batch_data).numpy().reshape(-1)
-
-                # compute loss on validation
-                if self.loss_name == 'bpr':
-                    return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
-                                                                                                y_true,
-                                                                                                y_pred)
-                    loss = self.compute_loss(return_dict_grouped, y_true_grouped)
-                else:
-                    loss = self.compute_loss(return_dict, self.get_labels(batch_data))
-
-                val_loss += loss.item()
-
-                y_pred_list.extend(y_pred)
-                y_true_list.extend(y_true)
-                if self.feature_map.group_id is not None:
-                    group_id_list.extend(group_id)
-
-            y_pred = np.array(y_pred_list, np.float64)
-            y_true = np.array(y_true_list, np.float64)
-            group_id = np.array(group_id_list) if len(group_id) > 0 else None
-            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), epoch)
-
-            if metrics is not None:
-                val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
-            else:
-                val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
-            logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
-            logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
-            return val_logs
+    # def evaluate(self, data_generator, metrics=None):
+    #     val_loss = 0
+    #     self.eval()  # set to evaluation mode
+    #     with torch.no_grad():
+    #         y_pred_list = []
+    #         y_true_list = []
+    #         group_id_list = []
+    #         if self._verbose > 0:
+    #             data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
+    #         for batch_data in data_generator:
+    #             return_dict = self.forward(batch_data)
+    #             y_pred = return_dict["y_pred"].data.cpu().numpy().reshape(-1)
+    #             y_true = self.get_labels(batch_data).data.cpu().numpy().reshape(-1)
+    #             group_id = self.get_group_id(batch_data).numpy().reshape(-1)
+    #
+    #             # compute loss on validation
+    #             if self.loss_name == 'bpr':
+    #                 return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
+    #                                                                                             y_true,
+    #                                                                                             y_pred)
+    #                 loss = self.compute_loss(return_dict_grouped, y_true_grouped)
+    #             else:
+    #                 loss = self.compute_loss(return_dict, self.get_labels(batch_data))
+    #
+    #             val_loss += loss.item()
+    #
+    #             y_pred_list.extend(y_pred)
+    #             y_true_list.extend(y_true)
+    #             if self.feature_map.group_id is not None:
+    #                 group_id_list.extend(group_id)
+    #
+    #         y_pred = np.array(y_pred_list, np.float64)
+    #         y_true = np.array(y_true_list, np.float64)
+    #         group_id = np.array(group_id_list) if len(group_id) > 0 else None
+    #         self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
+    #
+    #         if metrics is not None:
+    #             val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
+    #         else:
+    #             val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
+    #         logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
+    #         logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+    #         return val_logs

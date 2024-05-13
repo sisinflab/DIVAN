@@ -39,9 +39,9 @@ contrast_emb_path = "contrastive_vector.parquet"
 MAX_SEQ_LEN = 50
 
 print("Preprocess news info...")
-train_news_file = os.path.join(train_path, "articles.parquet")
+train_news_file = os.path.join(train_path, "test/articles.parquet")
 train_news = pl.scan_parquet(train_news_file)
-test_news_file = os.path.join(test_path, "articles.parquet")
+test_news_file = os.path.join(test_path, "test/articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
 news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])

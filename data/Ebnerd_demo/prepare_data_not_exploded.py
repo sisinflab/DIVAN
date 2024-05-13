@@ -28,7 +28,7 @@ from utils.functions import (sampling_strategy_wu2019, create_binary_labels_colu
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-dataset_version = "Ebnerd_demo_BPR_Exploded"
+dataset_version = "Ebnerd_demo_BPR_not_exploded"
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
 MAX_SEQ_LEN = 50
@@ -42,6 +42,13 @@ news = news.unique(subset=['article_id'])
 news = news.fill_null("")
 
 
+def compute_published_time(input):
+    impression_time = input["impression_time"]
+    article_ids_times = input["article_id_published_time"]
+    output = [(impression_time - el) for el in article_ids_times]
+    return output
+
+
 def map_feat_id_func(df, column, seq_feat=False):
     feat_set = set(flatten(df[column].to_list()))
     map_dict = dict(zip(list(feat_set), range(1, 1 + len(feat_set))))
@@ -53,7 +60,10 @@ def map_feat_id_func(df, column, seq_feat=False):
 
 
 def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
-    df = df.with_columns(pl.col(column).apply(lambda x: x[-max_seq_length:]))
+    if max_seq_length is not None:
+        df = df.with_columns(pl.col(column).apply(lambda x: x[-max_seq_length:]))
+    else:
+        df = df
     if map_feat_id:
         df = map_feat_id_func(df, column, seq_feat=True)
     df = df.with_columns(pl.col(column).apply(lambda x: f"{sep}".join(str(i) for i in x)))
@@ -69,6 +79,14 @@ news = (
 )
 news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))
 news2subcat = dict(zip(news["article_id"].cast(str), news["subcat1"].cast(str)))
+# NEW
+news2publishedtime = dict(zip(news["article_id"].cast(str), news["published_time"]))
+news2lastmodifiedtime = dict(zip(news["article_id"].cast(str), news["last_modified_time"]))
+news2premium = dict(zip(news["article_id"].cast(str), news["premium"]))
+news2article_type = dict(zip(news["article_id"].cast(str), news["article_type"]))
+news2_premium = dict(zip(news["article_id"].cast(str), news["premium"]))
+news2_sentiment_score = dict(zip(news["article_id"].cast(str), news["sentiment_score"]))
+# ----------------------------------
 news = tokenize_seq(news, 'ner_clusters', map_feat_id=True)
 news = tokenize_seq(news, 'topics', map_feat_id=True)
 news = tokenize_seq(news, 'subcategory', map_feat_id=False)
@@ -76,6 +94,10 @@ news = map_feat_id_func(news, "sentiment_label")
 news = map_feat_id_func(news, "article_type")
 news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"]))
 news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
+# NEW----
+news2_topics = dict(zip(news["article_id"].cast(str), news["topics"]))
+news2ner_clusters = dict(zip(news["article_id"].cast(str), news["ner_clusters"]))
+# --------
 print(news.head())
 print("Save news info...")
 os.makedirs(dataset_version, exist_ok=True)
@@ -112,6 +134,7 @@ def join_data(data_path):
             "hist_sentiment"),
         pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias("hist_type")
     )
+    # Perchè non aggiungere altre features qua?
     history_df = history_df.collect()
     behavior_file = os.path.join(data_path, "behaviors.parquet")
     sample_df = pl.scan_parquet(behavior_file)
@@ -124,6 +147,24 @@ def join_data(data_path):
             pl.lit(None).alias("trigger_id"),
             pl.lit(0).alias("click")
         ).collect()
+        sample_df = (
+            sample_df
+            .join(news, on='article_id', how="left")
+            .join(history_df, on='user_id', how="left")
+            .with_columns(
+                publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
+                publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
+                impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
+                impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32)
+            )
+            .with_columns(
+                pl.col("publish_days").clip_max(3).alias("pulish_3day"),
+                pl.col("publish_days").clip_max(7).alias("pulish_7day"),
+                pl.col("publish_days").clip_max(30),
+                pl.col("publish_hours").clip_max(24)
+            )
+            .drop(["impression_time", "published_time", "last_modified_time"])
+        )
     elif "validation" in data_path:
         # To treat differently test train and validation
         # NEW BUT TO BE DISCUSSED
@@ -135,48 +176,59 @@ def join_data(data_path):
             .drop(["article_ids_clicked"])
             .collect()
         )
+        sample_df = (
+            sample_df
+            .join(news, on='article_id', how="left")
+            .join(history_df, on='user_id', how="left")
+            .with_columns(
+                publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
+                publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
+                impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
+                impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32)
+            )
+            .with_columns(
+                pl.col("publish_days").clip_max(3).alias("pulish_3day"),
+                pl.col("publish_days").clip_max(7).alias("pulish_7day"),
+                pl.col("publish_days").clip_max(30),
+                pl.col("publish_hours").clip_max(24)
+            )
+            .drop(["impression_time", "published_time", "last_modified_time"])
+        )
     else:
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
-            .collect()
-            .pipe(sampling_strategy_wu2019, npratio=2, shuffle=True, clicked_col="article_ids_clicked",
-                  inview_col="article_ids_inview", with_replacement=True, seed=123)
-            .pipe(add_soft_neg_samples, n_samples=61, news_df=train_news)
-            .with_columns(
-                pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(pl.Int32).cast(
-                    pl.String))
-            .with_columns(pl.col("impression_id").cast(pl.Int64))
-            .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
-            # .pipe(reorder_lists, 'article_ids_inview', 'labels')
-            # .drop("article_ids_inview")
-            .drop("labels")
             .rename({"article_ids_inview": "article_id"})
-            .explode("article_id")
-            .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
+            .collect()
+            .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_id")
             .drop("article_ids_clicked")
-            .with_columns(pl.col("article_id").cast(pl.Int32))
         )
-    sample_df = (
-        sample_df
-        .join(news, on='article_id', how="left")
-        .join(history_df, on='user_id', how="left")
-        .with_columns(
-            publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
-            publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
-            impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
-            impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32)
+        sample_df = sample_df.join(history_df, on="user_id", how="left")
+        sample_df = tokenize_seq(sample_df, "labels", map_feat_id=False, max_seq_length=None)
+        sample_df = tokenize_seq(sample_df, "article_id", map_feat_id=False, max_seq_length=None)
+        sample_df = sample_df.with_columns(
+            pl.col("article_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias(
+                "article_id_cat"),
+            pl.col("article_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias(
+                "article_id_subcat"),
+            pl.col("article_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
+                "article_id_sentiment"),
+            pl.col("article_id").apply(lambda x: "|".join([news2ner_clusters.get(i, "") for i in x.split("^")])).alias(
+                "article_id_clusters"),
+            pl.col("article_id").apply(lambda x: "|".join([news2_topics.get(i, "") for i in x.split("^")])).alias(
+                "article_id_topics"),
+            pl.col("article_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias(
+                "article_id_type"),
+            pl.col("article_id").apply(lambda x: [news2publishedtime.get(i, "") for i in x.split("^")]).alias(
+                "article_id_published_time")
         )
-        .with_columns(
-            pl.col("publish_days").clip_max(3).alias("pulish_3day"),
-            pl.col("publish_days").clip_max(7).alias("pulish_7day"),
-            pl.col("publish_days").clip_max(30),
-            pl.col("publish_hours").clip_max(24)
-        )
-        .drop(["impression_time", "published_time", "last_modified_time"])
-    )
-    # sample_df = tokenize_seq(sample_df, 'labels',
-    # map_feat_id=False)  # Da rimuovere perchè non ci serve,tengo solo per non modificare il file di configurazione
-    print(sample_df.columns)
+        sample_df = sample_df.with_columns(pl.struct(["article_id_published_time", "impression_time"]).map_elements(
+            compute_published_time
+        ))
+
+
+        sample_df.drop(["article_id_published_time"])
+        sample_df = sample_df.drop(["impression_time"])
+        print(sample_df.columns)
     return sample_df
 
 
