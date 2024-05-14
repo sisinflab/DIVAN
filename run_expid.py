@@ -17,8 +17,6 @@
 
 import os
 import sys
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.extend([current_dir])
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
