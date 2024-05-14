@@ -44,4 +44,4 @@ class BPRLoss(ListWiseLoss):
             result = tf.reduce_mean(result)
             return torch.tensor(result.numpy())
         else:
-            return result
+            return torch.tensor(result.numpy())

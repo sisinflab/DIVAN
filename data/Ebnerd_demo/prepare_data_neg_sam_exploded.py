@@ -28,7 +28,7 @@ from utils.functions import (sampling_strategy_wu2019, create_binary_labels_colu
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-dataset_version = "Ebnerd_demo_BPR_Exploded"
+dataset_version = "Ebnerd_demo_x1"
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
 MAX_SEQ_LEN = 50
@@ -139,9 +139,9 @@ def join_data(data_path):
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
             .collect()
-            .pipe(sampling_strategy_wu2019, npratio=2, shuffle=True, clicked_col="article_ids_clicked",
+            .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
                   inview_col="article_ids_inview", with_replacement=True, seed=123)
-            .pipe(add_soft_neg_samples, n_samples=61, news_df=train_news)
+            .pipe(add_soft_neg_samples, n_samples=5, news_df=train_news)
             .with_columns(
                 pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(pl.Int32).cast(
                     pl.String))

@@ -21,7 +21,7 @@ from torch import nn
 from pandas.core.common import flatten
 from fuxictr.pytorch.models import BaseModel
 from fuxictr.pytorch.layers import FeatureEmbeddingDict, MLP_Block, DIN_Attention, Dice
-from utils.bpr import BPRLoss
+from utils.bpr_pytorch import BPRLoss
 from fuxictr.pytorch.torch_utils import get_optimizer, get_loss
 import logging
 from tqdm import tqdm
@@ -114,10 +114,8 @@ class DIN(BaseModel):
         y_true = self.get_labels(batch_data)
 
         if self.loss_name == 'bpr':
-            y_true = y_true.data.cpu().numpy().reshape(-1)
-            y_pred = return_dict["y_pred"].data.cpu().numpy().reshape(-1)
-            group_id = self.get_group_id(batch_data).data.cpu().numpy().reshape(-1)
-            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true, y_pred)
+            group_id = self.get_group_id(batch_data)
+            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true, return_dict["y_pred"])
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
             loss = self.compute_loss(return_dict, y_true)
@@ -193,27 +191,23 @@ class DIN(BaseModel):
     def compile(self, optimizer, loss, lr):
         self.optimizer = get_optimizer(optimizer, self.parameters(), lr)
         if loss == 'bpr':
-            self.loss_fn = BPRLoss(max_positives=1)  # max_positives = npratio + 1
+            self.loss_fn = BPRLoss()
         else:
             self.loss_fn = get_loss(loss)
 
     def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
-        score_df = pd.DataFrame({"group_index": group_id,
-                                 "y_true": y_true,
-                                 "y_pred": y_pred})
-
-        idxs = []
+        unique_groups = torch.unique(group_id)
         y_true_list = []
         y_pred_list = []
 
-        for idx, df in score_df.groupby("group_index"):
-            idxs.append(idx)
-            y_true_list.append(df['y_true'].values)
-            y_pred_list.append(df['y_pred'].values)
+        for group in unique_groups:
+            mask = (group_id == group)
+            y_true_list.append(y_true[mask])
+            y_pred_list.append(y_pred[mask])
 
-        return_dict = {'y_pred': torch.Tensor(np.array(y_pred_list))}
+        return_dict = {'y_pred': torch.stack(y_pred_list)}
 
-        return return_dict, torch.Tensor(np.array(y_true_list))
+        return return_dict, torch.stack(y_true_list)
 
     # def evaluate(self, data_generator, metrics=None):
     #     val_loss = 0
@@ -226,25 +220,24 @@ class DIN(BaseModel):
     #             data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
     #         for batch_data in data_generator:
     #             return_dict = self.forward(batch_data)
-    #             y_pred = return_dict["y_pred"].data.cpu().numpy().reshape(-1)
-    #             y_true = self.get_labels(batch_data).data.cpu().numpy().reshape(-1)
-    #             group_id = self.get_group_id(batch_data).numpy().reshape(-1)
+    #             y_true = self.get_labels(batch_data)
+    #             group_id = self.get_group_id(batch_data)
     #
     #             # compute loss on validation
     #             if self.loss_name == 'bpr':
     #                 return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
     #                                                                                             y_true,
-    #                                                                                             y_pred)
+    #                                                                                             return_dict["y_pred"])
     #                 loss = self.compute_loss(return_dict_grouped, y_true_grouped)
     #             else:
     #                 loss = self.compute_loss(return_dict, self.get_labels(batch_data))
     #
     #             val_loss += loss.item()
     #
-    #             y_pred_list.extend(y_pred)
-    #             y_true_list.extend(y_true)
+    #             y_pred_list.extend(return_dict["y_pred"].data.cpu().numpy().reshape(-1))
+    #             y_true_list.extend(y_true.data.cpu().numpy().reshape(-1))
     #             if self.feature_map.group_id is not None:
-    #                 group_id_list.extend(group_id)
+    #                 group_id_list.extend(group_id.numpy().reshape(-1))
     #
     #         y_pred = np.array(y_pred_list, np.float64)
     #         y_true = np.array(y_true_list, np.float64)

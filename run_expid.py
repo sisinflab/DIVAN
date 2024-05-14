@@ -42,7 +42,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_demo_x1_001_88960fb0',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_demo_x1_001_c463a694',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
