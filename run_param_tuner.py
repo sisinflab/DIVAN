@@ -13,7 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-
+import os
+import sys
+# extend the sys.path to fix the import problem
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.extend([current_dir])
 from datetime import datetime
 import gc
 import argparse
