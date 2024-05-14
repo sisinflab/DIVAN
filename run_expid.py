@@ -19,6 +19,9 @@ import os
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 import sys
+# extend the sys.path to fix the import problem
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.extend([current_dir])
 import logging
 import fuxictr_version
 from fuxictr import datasets
