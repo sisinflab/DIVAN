@@ -13,10 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-
+import sys
+import os
+# extend the sys.path to fix the import problem
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir_two_up = os.path.dirname(os.path.dirname(current_dir))
+sys.path.extend([parent_dir_two_up])
 import polars as pl
 import numpy as np
-import os
 from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
