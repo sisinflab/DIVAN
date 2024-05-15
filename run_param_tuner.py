@@ -20,7 +20,6 @@ sys.path.extend([os.path.dirname(os.path.abspath(__file__))])
 from datetime import datetime
 import gc
 import argparse
-import fuxictr_version
 from fuxictr import autotuner
 
 dataset = "demo"  # small, large
