@@ -17,6 +17,8 @@
 
 import os
 import sys
+import fuxictr
+assert fuxictr.__version__ == "2.2.3"
 # extend the sys.path to fix the import problem
 sys.path.extend([os.path.dirname(os.path.abspath(__file__))])
 
@@ -25,8 +27,8 @@ os.chdir(os.path.dirname(os.path.realpath(__file__)))
 # extend the sys.path to fix the import problem
 
 import logging
-import fuxictr
-assert fuxictr.__version__ == "2.2.3"
+
+
 from fuxictr import datasets
 from datetime import datetime
 from fuxictr.utils import load_config, set_logger, print_to_json, print_to_list
