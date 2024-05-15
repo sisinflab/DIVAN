@@ -17,6 +17,8 @@
 
 import os
 import sys
+# extend the sys.path to fix the import problem
+sys.path.extend([os.path.dirname(os.path.abspath(__file__))])
 
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
