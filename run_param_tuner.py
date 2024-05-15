@@ -16,6 +16,7 @@
 import os
 import sys
 # extend the sys.path to fix the import problem
+sys.path.extend([os.path.dirname(os.path.abspath(__file__))])
 from datetime import datetime
 import gc
 import argparse
