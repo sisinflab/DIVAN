@@ -25,12 +25,14 @@ import gc
 from utils.functions import (sampling_strategy_wu2019, create_binary_labels_column, add_soft_neg_samples, reorder_lists)
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
+test2_path = "./test2/"
 dataset_version = "Ebnerd_demo_x1"
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
@@ -42,7 +44,10 @@ train_news = pl.scan_parquet(train_news_file)
 test_news_file = os.path.join(test_path, "articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
 
-news = pl.concat([train_news, test_news])
+test2_news_file = os.path.join(test2_path, "articles.parquet")
+test2_news = pl.scan_parquet(test2_news_file)
+
+news = pl.concat([train_news, test_news, test2_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
 
@@ -129,8 +134,8 @@ def join_data(data_path):
             pl.lit(None).alias("trigger_id"),
             pl.lit(0).alias("click")
         ).collect()
-    elif "validation" in data_path:
-        # To treat differently test train and validation
+    elif "test2" in data_path:
+        # To treat differently test train and validation_large
         # NEW BUT TO BE DISCUSSED
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
@@ -146,7 +151,7 @@ def join_data(data_path):
             .collect()
             .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
                   inview_col="article_ids_inview", with_replacement=True, seed=123)
-#            .pipe(add_soft_neg_samples, n_samples=5, news_df=train_news)
+            #            .pipe(add_soft_neg_samples, n_samples=5, news_df=train_news)
             .with_columns(
                 pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(pl.Int32).cast(
                     pl.String))
@@ -194,6 +199,13 @@ print(valid_df.head())
 print("Validation samples", valid_df.shape)
 valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
+gc.collect()
+
+test2_df = join_data(test2_path)
+print(test2_df.head())
+print("Test samples", test2_df.shape)
+test2_df.write_csv(f"./{dataset_version}/test2.csv")
+del test2_df
 gc.collect()
 
 # test_df = join_data(test_path)

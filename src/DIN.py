@@ -209,45 +209,69 @@ class DIN(BaseModel):
 
         return return_dict, torch.stack(y_true_list)
 
-    # def evaluate(self, data_generator, metrics=None):
-    #     val_loss = 0
-    #     self.eval()  # set to evaluation mode
-    #     with torch.no_grad():
-    #         y_pred_list = []
-    #         y_true_list = []
-    #         group_id_list = []
-    #         if self._verbose > 0:
-    #             data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
-    #         for batch_data in data_generator:
-    #             return_dict = self.forward(batch_data)
-    #             y_true = self.get_labels(batch_data)
-    #             group_id = self.get_group_id(batch_data)
-    #
-    #             # compute loss on validation
-    #             if self.loss_name == 'bpr':
-    #                 return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
-    #                                                                                             y_true,
-    #                                                                                             return_dict["y_pred"])
-    #                 loss = self.compute_loss(return_dict_grouped, y_true_grouped)
-    #             else:
-    #                 loss = self.compute_loss(return_dict, self.get_labels(batch_data))
-    #
-    #             val_loss += loss.item()
-    #
-    #             y_pred_list.extend(return_dict["y_pred"].data.cpu().numpy().reshape(-1))
-    #             y_true_list.extend(y_true.data.cpu().numpy().reshape(-1))
-    #             if self.feature_map.group_id is not None:
-    #                 group_id_list.extend(group_id.numpy().reshape(-1))
-    #
-    #         y_pred = np.array(y_pred_list, np.float64)
-    #         y_true = np.array(y_true_list, np.float64)
-    #         group_id = np.array(group_id_list) if len(group_id) > 0 else None
-    #         self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
-    #
-    #         if metrics is not None:
-    #             val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
-    #         else:
-    #             val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
-    #         logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
-    #         logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
-    #         return val_logs
+    def evaluate(self, data_generator, metrics=None):
+        val_loss = 0
+        self.eval()  # set to evaluation mode
+        with torch.no_grad():
+            y_pred_list = []
+            y_true_list = []
+            group_id_list = []
+            if self._verbose > 0:
+                data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
+            for batch_data in data_generator:
+                return_dict = self.forward(batch_data)
+                y_true = self.get_labels(batch_data)
+                group_id = self.get_group_id(batch_data)
+
+                # compute loss on validation
+                if self.loss_name == 'bpr':
+                    return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
+                                                                                                y_true,
+                                                                                                return_dict["y_pred"])
+                    loss = self.compute_loss(return_dict_grouped, y_true_grouped)
+                else:
+                    loss = self.compute_loss(return_dict, self.get_labels(batch_data))
+
+                val_loss += loss.item()
+
+                y_pred_list.extend(return_dict["y_pred"].data.cpu().numpy().reshape(-1))
+                y_true_list.extend(y_true.data.cpu().numpy().reshape(-1))
+                if self.feature_map.group_id is not None:
+                    group_id_list.extend(group_id.numpy().reshape(-1))
+
+            y_pred = np.array(y_pred_list, np.float64)
+            y_true = np.array(y_true_list, np.float64)
+            group_id = np.array(group_id_list) if len(group_id) > 0 else None
+            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
+
+            if metrics is not None:
+                val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
+            else:
+                val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
+            logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
+            logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+            return val_logs
+
+    def evaluate_test(self, data_generator, metrics=None):
+        self.eval()  # set to evaluation mode
+        with torch.no_grad():
+            y_pred = []
+            y_true = []
+            group_id = []
+            if self._verbose > 0:
+                data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
+            for batch_data in data_generator:
+                return_dict = self.forward(batch_data)
+                y_pred.extend(return_dict["y_pred"].data.cpu().numpy().reshape(-1))
+                y_true.extend(self.get_labels(batch_data).data.cpu().numpy().reshape(-1))
+                if self.feature_map.group_id is not None:
+                    group_id.extend(self.get_group_id(batch_data).numpy().reshape(-1))
+            y_pred = np.array(y_pred, np.float64)
+            y_true = np.array(y_true, np.float64)
+            group_id = np.array(group_id) if len(group_id) > 0 else None
+            if metrics is not None:
+                val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
+            else:
+                val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
+            logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+            return val_logs

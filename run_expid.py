@@ -34,6 +34,7 @@ import argparse
 import os
 from pathlib import Path
 import warnings
+
 warnings.filterwarnings("ignore")
 
 dataset = "demo"  # small, large
@@ -72,12 +73,12 @@ if __name__ == '__main__':
     model = model_class(feature_map, **params)
     model.count_parameters()  # print number of parameters used in model
 
-    train_gen, valid_gen = RankDataLoader(feature_map, stage='train', **params).make_iterator()
+    train_gen, valid_gen, test_gen = RankDataLoader(feature_map, stage='both', **params).make_iterator()
     model.fit(train_gen, validation_data=valid_gen, **params)
 
     logging.info('****** Validation evaluation ******')
-    valid_result = model.evaluate(valid_gen)
-    del train_gen, valid_gen
+    valid_result = model.evaluate_test(test_gen)
+    del train_gen, valid_gen, test_gen
     gc.collect()
 
     test_result = {}
