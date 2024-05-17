@@ -33,6 +33,8 @@ import gc
 import argparse
 import os
 from pathlib import Path
+import warnings
+warnings.filterwarnings("ignore")
 
 dataset = "demo"  # small, large
 

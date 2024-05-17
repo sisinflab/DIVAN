@@ -24,6 +24,9 @@ import gc
 
 from utils.functions import (sampling_strategy_wu2019, create_binary_labels_column, add_soft_neg_samples, reorder_lists)
 
+import warnings
+warnings.filterwarnings("ignore")
+
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
@@ -35,8 +38,10 @@ MAX_SEQ_LEN = 50
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
 train_news = pl.scan_parquet(train_news_file)
+
 test_news_file = os.path.join(test_path, "articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
+
 news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
@@ -139,16 +144,14 @@ def join_data(data_path):
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
             .collect()
-            .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
+            .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
                   inview_col="article_ids_inview", with_replacement=True, seed=123)
-            .pipe(add_soft_neg_samples, n_samples=5, news_df=train_news)
+#            .pipe(add_soft_neg_samples, n_samples=5, news_df=train_news)
             .with_columns(
                 pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(pl.Int32).cast(
                     pl.String))
             .with_columns(pl.col("impression_id").cast(pl.Int64))
             .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
-            # .pipe(reorder_lists, 'article_ids_inview', 'labels')
-            # .drop("article_ids_inview")
             .drop("labels")
             .rename({"article_ids_inview": "article_id"})
             .explode("article_id")
