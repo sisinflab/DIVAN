@@ -13,15 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-import os
-import sys
-# extend the sys.path to fix the import problem
-sys.path.extend([os.path.dirname(os.path.abspath(__file__))])
 from datetime import datetime
 import gc
 import argparse
-import fuxictr
-assert fuxictr.__version__ == "2.2.3"
+import fuxictr_version
 from fuxictr import autotuner
 
 dataset = "demo"  # small, large

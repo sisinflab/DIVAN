@@ -15,17 +15,8 @@
 # =========================================================================
 
 
-import os
 import sys
-import fuxictr
-assert fuxictr.__version__ == "2.2.3"
-# extend the sys.path to fix the import problem
-sys.path.extend([os.path.dirname(os.path.abspath(__file__))])
-
-os.chdir(os.path.dirname(os.path.realpath(__file__)))
-
-# extend the sys.path to fix the import problem
-
+import fuxictr_version
 import logging
 
 
