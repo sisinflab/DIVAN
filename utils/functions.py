@@ -5,14 +5,14 @@ import warnings
 import datetime
 import inspect
 
-from utils.polars import (
+from utils.polars_utils import (
     _check_columns_in_df,
     drop_nulls_from_list,
     generate_unique_name,
     shuffle_list_column,
 )
 import polars as pl
-from utils.polars import slice_join_dataframes
+from utils.polars_utils import slice_join_dataframes
 
 from utils.constants import (
     DEFAULT_IMPRESSION_TIMESTAMP_COL,
