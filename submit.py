@@ -46,12 +46,14 @@ def grank(x):
     rank = "[" + ",".join(rank) + "]"
     return str(x["impression_id"].iloc[0]) + " " + rank
 
+dataset = "large"  # demo, small, large
+
 if __name__ == '__main__':
-    ''' Usage: python run_expid.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
+    ''' Usage: python submit.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='./config/DIN_ebnerd_demo_x1_tuner_config_01', help='The config directory.')
-    parser.add_argument('--expid', type=str, default='DIN_ebnerd_demo_x1_001_3c318e74', help='The experiment id to run.')
+    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01', help='The config directory.')
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_{dataset}_x1_001_3c318e74', help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
     
@@ -81,7 +83,7 @@ if __name__ == '__main__':
     
     params["batch_size"] = 16000
     test_gen = RankDataLoader(feature_map, stage='test', **params).make_iterator()
-    ans = pl.scan_csv("./data/Ebnerd_demo/Ebnerd_demo_x1/test.csv")
+    ans = pl.scan_csv(f"./data/Ebnerd_demo/Ebnerd_{dataset}_x1/test.csv")
     ans = ans.select(['impression_id', 'user_id']).collect().to_pandas()
     logging.info("Predicting scores...")
     ans["score"] = model.predict(test_gen)

@@ -19,7 +19,7 @@ import argparse
 import fuxictr_version
 from fuxictr import autotuner
 
-dataset = "demo"  # small, large
+dataset = "large"  # demo, small, large
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
