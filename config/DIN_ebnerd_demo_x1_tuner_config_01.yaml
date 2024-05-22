@@ -34,8 +34,9 @@ dataset_config:
             #- {name: pageviews_inviews_ratio, active: False, dtype: float, type: numeric, fill_na: 0}
             #- {name: total_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: sentiment_score, active: False, dtype: float, type: numeric, fill_na: 0}
-            - {name: delta_scroll_percentage, active: True, dtype: float, type: numeric, fill_na: 0}
-            - {name: delta_read_time, active: True, dtype: float, type: numeric, fill_na: 0}
+            - {name: popularity_score, active: True, dtype: float, type: numeric, fill_na: 0}
+            #- {name: delta_scroll_percentage, active: False, dtype: float, type: numeric, fill_na: 0}
+            #- {name: delta_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
             - {name: sentiment_label, active: True, dtype: str, type: categorical}
             - {name: subcat1, active: True, dtype: str, type: categorical}
             - {name: hist_id, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id}
