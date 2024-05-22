@@ -40,7 +40,7 @@ contrast_emb_path = "contrastive_vector.parquet"
 dataset_version = "Ebnerd_demo_x1"
 MAX_SEQ_LEN = 50
 
-download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
+#download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -185,7 +185,11 @@ def join_data(data_path):
             pl.col("publish_days").clip_max(30),
             pl.col("publish_hours").clip_max(24)
         )
-        .drop(["impression_time", "published_time", "last_modified_time"])
+        .with_columns(
+            delta_scroll_percentage=(pl.col("scroll_percentage") - pl.col("next_scroll_percentage")).abs(),
+            delta_read_time=(pl.col("read_time") - pl.col("next_read_time")).abs()
+        )
+        .drop(["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time"])
     )
     print(sample_df.columns)
     return sample_df
@@ -270,18 +274,18 @@ print("Save inviews_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 
 # remove unuseful files and directories
-os.remove('train/behaviors.parquet')
-os.remove('train/history.parquet')
-os.remove('train/articles.parquet')
-os.removedirs("train")
-os.remove('test/behaviors.parquet')
-os.remove('test/history.parquet')
-os.remove('test/articles.parquet')
-os.removedirs("test")
-os.remove('validation/behaviors.parquet')
-os.remove('validation/history.parquet')
-os.removedirs("validation")
-os.remove("contrastive_vector.parquet")
-os.remove("image_embeddings.parquet")
+# os.remove('train/behaviors.parquet')
+# os.remove('train/history.parquet')
+# os.remove('train/articles.parquet')
+# os.removedirs("train")
+# os.remove('test/behaviors.parquet')
+# os.remove('test/history.parquet')
+# os.remove('test/articles.parquet')
+# os.removedirs("test")
+# os.remove('validation/behaviors.parquet')
+# os.remove('validation/history.parquet')
+# os.removedirs("validation")
+# os.remove("contrastive_vector.parquet")
+# os.remove("image_embeddings.parquet")
 
 print("All done.")
