@@ -15,17 +15,19 @@
 # =========================================================================
 import sys
 import os
+
 # extend the sys.path to fix the import problem
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir_two_up = os.path.dirname(os.path.dirname(current_dir))
 sys.path.extend([parent_dir_two_up])
 import polars as pl
 import numpy as np
-from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
 from utils.download_dataset import download_ebnerd_dataset
+from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
+                             compute_item_popularity_scores, get_enriched_user_history)
 
 dataset_size = 'demo'  # small, large
 
@@ -40,7 +42,7 @@ contrast_emb_path = "contrastive_vector.parquet"
 dataset_version = "Ebnerd_demo_x1"
 MAX_SEQ_LEN = 50
 
-#download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
+download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -50,38 +52,6 @@ test_news = pl.scan_parquet(test_news_file)
 news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
-
-
-def map_feat_id_func(df, column, seq_feat=False):
-    feat_set = set(flatten(df[column].to_list()))
-    map_dict = dict(zip(list(feat_set), range(1, 1 + len(feat_set))))
-    if seq_feat:
-        df = df.with_columns(pl.col(column).apply(lambda x: [map_dict.get(i, 0) for i in x]))
-    else:
-        df = df.with_columns(pl.col(column).apply(lambda x: map_dict.get(x, 0)).cast(str))
-    return df
-
-
-def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
-    df = df.with_columns(pl.col(column).apply(lambda x: x[-max_seq_length:]))
-    if map_feat_id:
-        df = map_feat_id_func(df, column, seq_feat=True)
-    df = df.with_columns(pl.col(column).apply(lambda x: f"{sep}".join(str(i) for i in x)))
-    return df
-
-
-def impute_list_with_mean(lst):
-    non_null_values = [x for x in lst if x not in [None, "null"]]
-    if non_null_values:
-        mean_value = sum(non_null_values) / len(non_null_values)
-        return [x if x is not None else mean_value for x in lst]
-    else:
-        return lst
-
-
-def encode_date_list(lst):
-    return [x.timestamp() for x in lst]
-
 
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
@@ -93,6 +63,7 @@ news = (
     #    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
     .collect()
 )
+
 news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))
 news2subcat = dict(zip(news["article_id"].cast(str), news["subcat1"].cast(str)))
 news = tokenize_seq(news, 'ner_clusters', map_feat_id=True)
@@ -102,6 +73,36 @@ news = map_feat_id_func(news, "sentiment_label")
 news = map_feat_id_func(news, "article_type")
 news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"]))
 news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
+
+print("Compute news popularity...")
+train_history_file = os.path.join(train_path, "history.parquet")
+train_history = pl.scan_parquet(train_history_file)
+valid_history_file = os.path.join(dev_path, "history.parquet")
+valid_history = pl.scan_parquet(valid_history_file)
+test_history_file = os.path.join(test_path, "history.parquet")
+test_history = pl.scan_parquet(test_history_file)
+history = pl.concat([train_history, valid_history, test_history])
+history = history.unique(subset=['user_id'])
+history = history.fill_null("")
+
+train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
+train_behaviors = pl.scan_parquet(train_behaviors_file)
+valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
+valid_behaviors = pl.scan_parquet(valid_behaviors_file)
+behaviors = pl.concat([train_behaviors, valid_behaviors])
+behaviors = behaviors.unique(subset=['impression_id'])
+behaviors = behaviors.fill_null("")
+
+R = get_enriched_user_history(behaviors, history)
+popularity_scores = compute_item_popularity_scores(R)
+
+news = news.with_columns(
+    pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0)).alias("popularity_score")
+)
+
+news2popularity = dict(zip(news["article_id"].cast(str), news["popularity_score"].cast(str)))
+
+
 print(news.head())
 print("Save news info...")
 os.makedirs(dataset_version, exist_ok=True)
@@ -146,7 +147,8 @@ def join_data(data_path):
             "hist_subcat1"),
         pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
             "hist_sentiment"),
-        pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias("hist_type")
+        pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias("hist_type"),
+        pl.col("hist_id").apply(lambda x: "^".join([news2popularity.get(i, "0") for i in x.split("^")])).alias("hist_popularity")
     )
     history_df = history_df.collect()
     behavior_file = os.path.join(data_path, "behaviors.parquet")
@@ -185,10 +187,10 @@ def join_data(data_path):
             pl.col("publish_days").clip_max(30),
             pl.col("publish_hours").clip_max(24)
         )
-        .with_columns(
-            delta_scroll_percentage=(pl.col("scroll_percentage") - pl.col("next_scroll_percentage")).abs(),
-            delta_read_time=(pl.col("read_time") - pl.col("next_read_time")).abs()
-        )
+        # .with_columns(
+        #     delta_scroll_percentage=(pl.col("scroll_percentage") - pl.col("next_scroll_percentage")).abs(),
+        #     delta_read_time=(pl.col("read_time") - pl.col("next_read_time")).abs()
+        # )
         .drop(["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time"])
     )
     print(sample_df.columns)
@@ -274,18 +276,18 @@ print("Save inviews_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 
 # remove unuseful files and directories
-# os.remove('train/behaviors.parquet')
-# os.remove('train/history.parquet')
-# os.remove('train/articles.parquet')
-# os.removedirs("train")
-# os.remove('test/behaviors.parquet')
-# os.remove('test/history.parquet')
-# os.remove('test/articles.parquet')
-# os.removedirs("test")
-# os.remove('validation/behaviors.parquet')
-# os.remove('validation/history.parquet')
-# os.removedirs("validation")
-# os.remove("contrastive_vector.parquet")
-# os.remove("image_embeddings.parquet")
+os.remove('train/behaviors.parquet')
+os.remove('train/history.parquet')
+os.remove('train/articles.parquet')
+os.removedirs("train")
+os.remove('test/behaviors.parquet')
+os.remove('test/history.parquet')
+os.remove('test/articles.parquet')
+os.removedirs("test")
+os.remove('validation/behaviors.parquet')
+os.remove('validation/history.parquet')
+os.removedirs("validation")
+os.remove("contrastive_vector.parquet")
+os.remove("image_embeddings.parquet")
 
 print("All done.")
