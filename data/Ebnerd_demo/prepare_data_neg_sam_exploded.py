@@ -22,8 +22,6 @@ parent_dir_two_up = os.path.dirname(os.path.dirname(current_dir))
 sys.path.extend([parent_dir_two_up])
 import polars as pl
 import numpy as np
-import os
-from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
@@ -32,6 +30,8 @@ from utils.functions import (sampling_strategy_wu2019, create_binary_labels_colu
                              reorder_lists, map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history)
 from utils.download_dataset import download_ebnerd_dataset
+from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
+                             compute_item_popularity_scores, get_enriched_user_history)
 
 import warnings
 
