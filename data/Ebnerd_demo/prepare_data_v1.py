@@ -28,28 +28,39 @@ import gc
 from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history)
+from utils.sampling import create_test_for_demo
 
+import warnings
+
+warnings.filterwarnings("ignore")
 dataset_size = 'demo'  # small, large
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
+test2_path = "./test2/"
 
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
 
-dataset_version = "Ebnerd_demo_x1"
+dataset_version = f"Ebnerd_{dataset_size}_x1"
 MAX_SEQ_LEN = 50
 
 # download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
+create_test_for_demo()
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
 train_news = pl.scan_parquet(train_news_file)
+
 test_news_file = os.path.join(test_path, "articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
-news = pl.concat([train_news, test_news])
+
+test2_news_file = os.path.join(test2_path, "articles.parquet")
+test2_news = pl.scan_parquet(test2_news_file)
+
+news = pl.concat([train_news, test_news, test2_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
 
@@ -81,7 +92,9 @@ valid_history_file = os.path.join(dev_path, "history.parquet")
 valid_history = pl.scan_parquet(valid_history_file)
 test_history_file = os.path.join(test_path, "history.parquet")
 test_history = pl.scan_parquet(test_history_file)
-history = pl.concat([train_history, valid_history, test_history])
+test2_history_file = os.path.join(test2_path, "history.parquet")
+test2_history = pl.scan_parquet(test2_history_file)
+history = pl.concat([train_history, valid_history, test_history, test2_history])
 history = history.unique(subset=['user_id'])
 history = history.fill_null("")
 
@@ -92,7 +105,10 @@ train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
 train_behaviors = pl.scan_parquet(train_behaviors_file)
 valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
 valid_behaviors = pl.scan_parquet(valid_behaviors_file)
-behaviors = pl.concat([train_behaviors, valid_behaviors])
+test2_behaviors_file = os.path.join(test2_path, "behaviors.parquet")
+test2_behaviors = pl.scan_parquet(test2_behaviors_file)
+behaviors = pl.concat([train_behaviors, valid_behaviors, test2_behaviors])
+
 behaviors = behaviors.unique(subset=['impression_id'])
 behaviors = behaviors.fill_null("")
 
@@ -105,9 +121,6 @@ gc.collect()
 news = news.with_columns(
     pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0)).alias("popularity_score")
 )
-
-news2popularity = dict(zip(news["article_id"].cast(str), news["popularity_score"].cast(str)))
-
 
 print(news.head())
 print("Save news info...")
@@ -154,7 +167,6 @@ def join_data(data_path):
         pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
             "hist_sentiment"),
         pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias("hist_type"),
-        pl.col("hist_id").apply(lambda x: "^".join([news2popularity.get(i, "0") for i in x.split("^")])).alias("hist_popularity")
     )
     history_df = history_df.collect()
     behavior_file = os.path.join(data_path, "behaviors.parquet")
@@ -216,6 +228,13 @@ valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
 gc.collect()
 
+test2_df = join_data(test2_path)
+print(test2_df.head())
+print("Test samples", test2_df.shape)
+test2_df.write_csv(f"./{dataset_version}/test2.csv")
+del test2_df
+gc.collect()
+
 # test_df = join_data(test_path)
 # print(test_df.head())
 # print("Test samples", test_df.shape)
@@ -258,11 +277,11 @@ def create_inviews_vectors(behavior_df):
     return inviews_ids["impression_id"], np.array(inviews_vectors).squeeze(axis=1)
 
 print("Create a representation of the inviews")
-behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-behavior_df_test = pl.scan_parquet(behavior_file_test)
+#behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+#behavior_df_test = pl.scan_parquet(behavior_file_test)
 
-behaviors = pl.concat([behaviors, behavior_df_test])
-behaviors = behaviors.unique(subset=['impression_id'])
+#behaviors = pl.concat([behaviors, behavior_df_test])
+#behaviors = behaviors.unique(subset=['impression_id'])
 
 impr_ids, inviews_vectors = create_inviews_vectors(behaviors)
 inviews_emb = pca.fit_transform(inviews_vectors)
@@ -286,6 +305,9 @@ np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 # os.remove('validation/behaviors.parquet')
 # os.remove('validation/history.parquet')
 # os.removedirs("validation")
+# os.remove('test2/behaviors.parquet')
+# os.remove('test2/history.parquet')
+# os.removedirs("test2")
 # os.remove("contrastive_vector.parquet")
 # os.remove("image_embeddings.parquet")
 
