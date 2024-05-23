@@ -15,12 +15,11 @@
 # =========================================================================
 
 
-import os
-
-os.chdir(os.path.dirname(os.path.realpath(__file__)))
 import sys
-import logging
 import fuxictr_version
+import logging
+
+
 from fuxictr import datasets
 from datetime import datetime
 from fuxictr.utils import load_config, set_logger, print_to_json, print_to_list
@@ -45,7 +44,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_demo_x1_001_c463a694',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_{dataset}_x1_001_fa511cb2',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
