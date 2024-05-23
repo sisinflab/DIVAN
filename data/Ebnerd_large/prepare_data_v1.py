@@ -33,7 +33,7 @@ from utils.sampling import create_test_for_large
 import warnings
 
 warnings.filterwarnings("ignore")
-dataset_size = 'large'  # small, large
+dataset_size = 'large'  # demo, small, large
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
@@ -57,7 +57,10 @@ train_news = pl.scan_parquet(train_news_file)
 test_news_file = os.path.join(test_path, "articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
 
-news = pl.concat([train_news, test_news])
+test2_news_file = os.path.join(test2_path, "articles.parquet")
+test2_news = pl.scan_parquet(test2_news_file)
+
+news = pl.concat([train_news, test_news, test2_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
 
@@ -106,7 +109,6 @@ test2_behaviors_file = os.path.join(test2_path, "behaviors.parquet")
 test2_behaviors = pl.scan_parquet(test2_behaviors_file)
 behaviors = pl.concat([train_behaviors, valid_behaviors, test2_behaviors])
 
-behaviors = pl.concat([train_behaviors, valid_behaviors])
 behaviors = behaviors.unique(subset=['impression_id'])
 behaviors = behaviors.fill_null("")
 
@@ -226,6 +228,13 @@ valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
 gc.collect()
 
+test2_df = join_data(test2_path)
+print(test2_df.head())
+print("Test samples", test2_df.shape)
+test2_df.write_csv(f"./{dataset_version}/test2.csv")
+del test2_df
+gc.collect()
+
 test_df = join_data(test_path)
 print(test_df.head())
 print("Test samples", test_df.shape)
@@ -285,21 +294,21 @@ print("Save inviews_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
 
 # remove unuseful files and directories
-os.remove('train/behaviors.parquet')
-os.remove('train/history.parquet')
-os.remove('train/articles.parquet')
-os.removedirs("train")
-os.remove('test/behaviors.parquet')
-os.remove('test/history.parquet')
-os.remove('test/articles.parquet')
-os.removedirs("test")
-os.remove('validation/behaviors.parquet')
-os.remove('validation/history.parquet')
-os.removedirs("validation")
-os.remove('test2/behaviors.parquet')
-os.remove('test2/history.parquet')
-os.removedirs("test2")
-os.remove("contrastive_vector.parquet")
-os.remove("image_embeddings.parquet")
+# os.remove('train/behaviors.parquet')
+# os.remove('train/history.parquet')
+# os.remove('train/articles.parquet')
+# os.removedirs("train")
+# os.remove('test/behaviors.parquet')
+# os.remove('test/history.parquet')
+# os.remove('test/articles.parquet')
+# os.removedirs("test")
+# os.remove('validation/behaviors.parquet')
+# os.remove('validation/history.parquet')
+# os.removedirs("validation")
+# os.remove('test2/behaviors.parquet')
+# os.remove('test2/history.parquet')
+# os.removedirs("test2")
+# os.remove("contrastive_vector.parquet")
+# os.remove("image_embeddings.parquet")
 
 print("All done.")
