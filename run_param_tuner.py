@@ -18,6 +18,8 @@ import gc
 import argparse
 import fuxictr_version
 from fuxictr import autotuner
+import warnings
+warnings.filterwarnings("ignore")
 
 dataset = "large"  # demo, small, large
 

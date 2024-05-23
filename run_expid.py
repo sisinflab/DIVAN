@@ -32,6 +32,9 @@ import gc
 import argparse
 import os
 from pathlib import Path
+import warnings
+
+warnings.filterwarnings("ignore")
 
 dataset = "demo"  # small, large
 
@@ -41,7 +44,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_demo_x1_001_99cbb7df',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_{dataset}_x1_001_fa511cb2',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
@@ -69,12 +72,12 @@ if __name__ == '__main__':
     model = model_class(feature_map, **params)
     model.count_parameters()  # print number of parameters used in model
 
-    train_gen, valid_gen = RankDataLoader(feature_map, stage='train', **params).make_iterator()
+    train_gen, valid_gen, test_gen = RankDataLoader(feature_map, stage='both', **params).make_iterator()
     model.fit(train_gen, validation_data=valid_gen, **params)
 
     logging.info('****** Validation evaluation ******')
-    valid_result = model.evaluate(valid_gen)
-    del train_gen, valid_gen
+    valid_result = model.evaluate_test(test_gen)
+    del train_gen, valid_gen, test_gen
     gc.collect()
 
     test_result = {}

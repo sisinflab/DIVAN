@@ -21,27 +21,27 @@ from pandas.core.common import flatten
 from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
-from utils.download_dataset import download_ebnerd_dataset
 
-dataset_size = 'large'  # demo, small, large
+from utils.functions import (sampling_strategy_wu2019, create_binary_labels_column,
+                                                     ebnerd_from_path, flatten_single_value_list_column)
+from utils.constants import (DEFAULT_USER_COL,
+                                                     DEFAULT_HISTORY_ARTICLE_ID_COL,
+                                                     DEFAULT_INVIEW_ARTICLES_COL,
+                                                     DEFAULT_CLICKED_ARTICLES_COL)
 
 # Download the datasets and put them to the following folders
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-
+dataset_version = "Ebnerd_demo_x1"
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
-
-dataset_version = "Ebnerd_large_x1"
 MAX_SEQ_LEN = 50
 
-download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
-
 print("Preprocess news info...")
-train_news_file = os.path.join(train_path, "articles.parquet")
+train_news_file = os.path.join(train_path, "test/articles.parquet")
 train_news = pl.scan_parquet(train_news_file)
-test_news_file = os.path.join(test_path, "articles.parquet")
+test_news_file = os.path.join(test_path, "test/articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
 news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])
@@ -66,27 +66,12 @@ def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
     return df
 
 
-def impute_list_with_mean(lst):
-    non_null_values = [x for x in lst if x not in [None, "null"]]
-    if non_null_values:
-        mean_value = sum(non_null_values) / len(non_null_values)
-        return [x if x is not None else mean_value for x in lst]
-    else:
-        return lst
-
-
-def encode_date_list(lst):
-    return [x.timestamp() for x in lst]
-
-
 news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
                     'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
-#                    'total_inviews', 'total_pageviews', 'total_read_time',
+                    'total_inviews', 'total_pageviews', 'total_read_time',
                     'sentiment_score', 'sentiment_label'])
 news = (
-    news
-    .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
-#    .with_columns(pageviews_inviews_ratio=pl.col("total_pageviews") / pl.col("total_inviews"))
+    news.with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
     .collect()
 )
 news2cat = dict(zip(news["article_id"].cast(str), news["category"].cast(str)))
@@ -106,36 +91,27 @@ with open(f"./{dataset_version}/news_info.jsonl", "w") as f:
 
 print("Preprocess behavior data...")
 
+"""
+La funzione join_data è stata modificata per creare un dataset in una forma utile per applicare una triplet loss
+1) Applico il sampling_wu preso dalla funzioni fornite dal github della challenge
+2) Prima ogni training sample era costituito da un solo candidato e la corrispettiva label da predire
+3) Ogni training sample ha un solo elemento cliccato(potenzialmente da cambiare) e negative sample(campionati dall'inview)
+4) L'idea è quindi applicare una loss come la Triplet per avvicinare il vettore che il nostro modello da in output da quello cliccato
+e al contrario allontanarlo dagli altri
+VEDERE in Ebnerd_demo_x1/train.csv il risultato ottenuto per adesso
+"""
+
 
 def join_data(data_path):
+    # TODO: Dovrebbe essere applicato solo al training secondo me(per adesso viene applicato ad entrambe)
     history_file = os.path.join(data_path, "history.parquet")
     history_df = pl.scan_parquet(history_file)
     history_df = history_df.rename({"article_id_fixed": "hist_id",
                                     "read_time_fixed": "hist_read_time",
                                     "impression_time_fixed": "hist_time",
                                     "scroll_percentage_fixed": "hist_scroll_percent"})
-
-    # missing imputation of hist_scroll_percent
-    history_df = history_df.with_columns(
-        pl.col("hist_scroll_percent").apply(impute_list_with_mean)
-    )
-    # missing imputation of hist_read_time
-    history_df = history_df.with_columns(
-        pl.col("hist_read_time").apply(impute_list_with_mean)
-    )
-
-    # encoding of hist_time
-    history_df = history_df.with_columns(
-        pl.col("hist_time").apply(encode_date_list)
-    )
-
     history_df = tokenize_seq(history_df, 'hist_id', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
-    history_df = tokenize_seq(history_df, 'hist_read_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
-    history_df = tokenize_seq(history_df, 'hist_scroll_percent', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
-    history_df = tokenize_seq(history_df, 'hist_time', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
-
-    #history_df = history_df.select(["user_id", "hist_id", "hist_read_time", "hist_scroll_percent", "hist_ordinal_time"])
-
+    history_df = history_df.select(["user_id", "hist_id"])
     history_df = history_df.with_columns(
         pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
         pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias(
@@ -147,7 +123,6 @@ def join_data(data_path):
     history_df = history_df.collect()
     behavior_file = os.path.join(data_path, "behaviors.parquet")
     sample_df = pl.scan_parquet(behavior_file)
-    sample_df.drop("gender", "postcode", "age")
     if "test/" in data_path:
         sample_df = (
             sample_df.rename({"article_ids_inview": "article_id"})
@@ -160,13 +135,16 @@ def join_data(data_path):
     else:
         sample_df = (
             sample_df.rename({"article_id": "trigger_id"})
-            .rename({"article_ids_inview": "article_id"})
-            .explode('article_id')
-            .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-            .drop(["article_ids_clicked"])
+            .collect()
+            .pipe(sampling_strategy_wu2019, npratio=4, shuffle=True, clicked_col="article_ids_clicked",
+                  inview_col="article_ids_inview", with_replacement=True, seed=123)
+            .pipe(create_binary_labels_column, clicked_col="article_ids_clicked", inview_col="article_ids_inview")
+            .with_columns(pl.col("article_ids_clicked").map_elements(lambda x: x[0]))
+            .with_columns(pl.col("article_ids_clicked").cast(pl.Int32))
+            .rename({"article_ids_clicked": "article_id"})
         )
     sample_df = (
-        sample_df.collect()
+        sample_df
         .join(news, on='article_id', how="left")
         .join(history_df, on='user_id', how="left")
         .with_columns(
@@ -183,6 +161,8 @@ def join_data(data_path):
         )
         .drop(["impression_time", "published_time", "last_modified_time"])
     )
+    sample_df = tokenize_seq(sample_df, 'article_ids_inview', map_feat_id=False)
+    sample_df = tokenize_seq(sample_df, 'labels', map_feat_id=False)
     print(sample_df.columns)
     return sample_df
 
@@ -200,12 +180,12 @@ valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
 gc.collect()
 
-test_df = join_data(test_path)
-print(test_df.head())
-print("Test samples", test_df.shape)
-test_df.write_csv(f"./{dataset_version}/test.csv")
-del test_df
-gc.collect()
+# test_df = join_data(test_path)
+# print(test_df.head())
+# print("Test samples", test_df.shape)
+# test_df.write_csv(f"./{dataset_version}/test.csv")
+# del test_df
+# gc.collect()
 
 print("Preprocess pretrained embeddings...")
 image_emb_df = pl.read_parquet(image_emb_path)
@@ -228,55 +208,5 @@ item_dict = {
 }
 print("Save contrast_emb_dim64.npz...")
 np.savez(f"./{dataset_version}/contrast_emb_dim64.npz", **item_dict)
-
-
-def create_inviews_vectors(behavior_df):
-    inviews_ids = behavior_df.select('impression_id', 'article_ids_inview').collect()
-    inviews_vectors = []
-    for inview in inviews_ids['article_ids_inview'].to_list():
-        inview_vectors = []
-        for item_id in inview:
-            inview_vectors.append(contrast_emb_df.filter(pl.col('article_id') == item_id)['contrastive_vector'].to_list())
-        inviews_vectors.append(np.array(inview_vectors).mean(axis=0))
-    return inviews_ids["impression_id"], np.array(inviews_vectors).squeeze(axis=1)
-
-
-print("Create a representation of the inviews")
-behavior_file_train = os.path.join(train_path, "behaviors.parquet")
-behavior_df_train = pl.scan_parquet(behavior_file_train)
-
-behavior_file_val = os.path.join(dev_path, "behaviors.parquet")
-behavior_df_val = pl.scan_parquet(behavior_file_val)
-
-behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-behavior_df_test = pl.scan_parquet(behavior_file_test)
-
-behavior_df = pl.concat([behavior_df_train, behavior_df_val, behavior_df_test])
-behavior_df = behavior_df.unique(subset=['impression_id'])
-
-impr_ids, inviews_vectors = create_inviews_vectors(behavior_df)
-inviews_emb = pca.fit_transform(inviews_vectors)
-print("inviews_emb.shape", inviews_emb.shape)
-item_dict = {
-    "key": impr_ids.cast(str),
-    "value": inviews_emb
-}
-print("Save inviews_emb_dim64.npz...")
-np.savez(f"./{dataset_version}/inviews_emb_dim64.npz", **item_dict)
-
-# remove unuseful files and directories
-os.remove('train/behaviors.parquet')
-os.remove('train/history.parquet')
-os.remove('train/articles.parquet')
-os.removedirs("train")
-os.remove('test/behaviors.parquet')
-os.remove('test/history.parquet')
-os.remove('test/articles.parquet')
-os.removedirs("test")
-os.remove('validation/behaviors.parquet')
-os.remove('validation/history.parquet')
-os.removedirs("validation")
-os.remove("contrastive_vector.parquet")
-os.remove("image_embeddings.parquet")
 
 print("All done.")
