@@ -7,7 +7,7 @@ try:
 except ImportError:
     print("polars not available")
 
-from utils.python import generate_unique_name
+from utils.python_utils import generate_unique_name
 
 
 def _check_columns_in_df(df: pl.DataFrame, columns: list[str]) -> None:
