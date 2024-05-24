@@ -29,7 +29,7 @@ if __name__ == '__main__':
                         help='The config file for para tuning.')
     parser.add_argument('--tag', type=str, default=None,
                         help='Use the tag to determine which expid to run (e.g. 001 for the first expid).')
-    parser.add_argument('--gpu', nargs='+', default=[7, 8, 9], help='The list of gpu indexes, -1 for cpu.')
+    parser.add_argument('--gpu', nargs='+', default=[0, 1], help='The list of gpu indexes, -1 for cpu.')
     args = vars(parser.parse_args())
     gpu_list = args['gpu']
     expid_tag = args['tag']
