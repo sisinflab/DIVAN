@@ -21,7 +21,7 @@ from fuxictr import autotuner
 import warnings
 warnings.filterwarnings("ignore")
 
-dataset = "demo"  # demo, small, large
+dataset = "large"  # demo, small, large
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

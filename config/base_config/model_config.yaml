@@ -2,7 +2,7 @@ Base:
     model_root: './checkpoints/'
     num_workers: 3
     verbose: 1
-    early_stop_patience: 2
+    early_stop_patience: 20
     pickle_feature_encoder: True
     save_best_only: True
     eval_steps: null
@@ -71,7 +71,7 @@ DIN_test2:
 DIN_default: # This is a config template
     model: DIN
     dataset_id: TBD
-    loss: 'bpr' # 'bpr', 'binary_crossentropy'
+    loss: 'binary_crossentropy' # 'bpr', 'binary_crossentropy'
     metrics: ['logloss', 'AUC']
     task: binary_classification
     optimizer: adam
