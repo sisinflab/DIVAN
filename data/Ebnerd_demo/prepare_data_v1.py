@@ -47,7 +47,7 @@ contrast_emb_path = "contrastive_vector.parquet"
 dataset_version = f"Ebnerd_{dataset_size}_x1"
 MAX_SEQ_LEN = 50
 
-# download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
+download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
 create_test_for_demo()
 
 print("Preprocess news info...")

@@ -30,7 +30,7 @@ from utils.constants import (
     DEFAULT_USER_COL,
     DEFAULT_HISTORY_ARTICLE_ID_COL
 )
-from utils.python import create_lookup_dict
+from utils.python_utils import create_lookup_dict
 
 
 def reorder_lists(df: pl.DataFrame, article_col: str, label_col: str):
