@@ -52,5 +52,5 @@ def create_test_for_large():
         zip_ref.extract("validation/history.parquet", path="./Ebnerd_small/")
         zip_ref.extract("validation/behaviors.parquet", path="./Ebnerd_small/")
         zip_ref.extract("articles.parquet", path="./Ebnerd_small/validation")
-    os.rename("./Ebnerd_small/", "./test2/")
+    os.rename("./Ebnerd_small/validation", "./test2/")
     print("Test set created!")
