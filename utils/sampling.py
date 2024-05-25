@@ -48,8 +48,8 @@ def create_test_for_large():
     dataset_url = f"https://ebnerd-dataset.s3.eu-west-1.amazonaws.com/ebnerd_small.zip"
     response_dataset = requests.get(dataset_url)
     with zipfile.ZipFile(io.BytesIO(response_dataset.content)) as zip_ref:
-        zip_ref.extract("articles.parquet", path="./train/")
-        zip_ref.extract("validation/history.parquet")
-        zip_ref.extract("validation/behaviors.parquet")
-    os.rename("./validation/history.parquet", "./test2/history.parquet")
-    os.rename("./validation/behaviors.parquet", "./test2/behaviors.parquet")
+        zip_ref.extract("validation/history.parquet", path="./Ebnerd_small/")
+        zip_ref.extract("validation/behaviors.parquet", path="./Ebnerd_small/")
+        zip_ref.extract("articles.parquet", path="./Ebnerd_small/validation")
+    os.rename("./Ebnerd_small/validation/history.parquet", "./test2/history.parquet")
+    os.rename("./Ebnerd_small/validation/behaviors.parquet", "./test2/behaviors.parquet")
