@@ -47,4 +47,4 @@ def download_ebnerd_dataset(dataset_size, train_path, val_path, test_path=None):
     os.rename("Ekstra_Bladet_contrastive_vector/contrastive_vector.parquet", "contrastive_vector.parquet")
     os.removedirs("./Ekstra_Bladet_contrastive_vector")
 
-    print("All done!")
+    print(f"Dataset Ebnerd {dataset_size} downloaded!")

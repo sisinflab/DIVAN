@@ -45,6 +45,7 @@ def create_test_for_demo():
     os.removedirs("./Ebnerd_large/validation/")
 
 def create_test_for_large():
+    print("Creating test set for Ebnerd large")
     dataset_url = f"https://ebnerd-dataset.s3.eu-west-1.amazonaws.com/ebnerd_small.zip"
     response_dataset = requests.get(dataset_url)
     with zipfile.ZipFile(io.BytesIO(response_dataset.content)) as zip_ref:
@@ -52,6 +53,4 @@ def create_test_for_large():
         zip_ref.extract("validation/behaviors.parquet", path="./Ebnerd_small/")
         zip_ref.extract("articles.parquet", path="./Ebnerd_small/validation")
     os.rename("./Ebnerd_small/", "./test2/")
-    os.remove("./Ebnerd_small/validation/behaviors.parquet")
-    os.remove("./Ebnerd_small/validation/history.parquet")
-    os.remove("./Ebnerd_small/validation/articles.parquet")
+    print("Test set created!")
