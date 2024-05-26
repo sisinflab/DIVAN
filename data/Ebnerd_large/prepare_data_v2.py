@@ -29,7 +29,7 @@ from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history)
 from utils.sampling import create_test_for_large
-
+from utils.polars_utils import slice_join_dataframes
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -178,9 +178,9 @@ def join_data(data_path):
             (pl.col("article_id").is_in(pl.col("article_ids_clicked"))).cast(pl.Int8).alias("click")
         ]).drop(["article_ids_clicked"])
 
-    sample_df = sample_df.collect().join(news, on='article_id', how="left").join(history_df, on='user_id',
-                                                                                 how="left").with_columns([
-        (pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32).alias("publish_days"),
+    sample_df = (sample_df.collect().pipe(slice_join_dataframes, df2=news, on='article_id', how="left")
+                 .pipe(slice_join_dataframes, history_df, on='user_id', how="left")
+                 .with_columns([(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32).alias("publish_days"),
         (pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32).alias("publish_hours"),
         pl.col('impression_time').dt.hour().cast(pl.Int32).alias("impression_hour"),
         pl.col('impression_time').dt.weekday().cast(pl.Int32).alias("impression_weekday"),
@@ -188,8 +188,7 @@ def join_data(data_path):
         pl.col("publish_days").clip_max(7).alias("publish_7day"),
         pl.col("publish_days").clip_max(30),
         pl.col("publish_hours").clip_max(24)
-    ]).drop(["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time"])
-
+    ]).drop(["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time"]))
     print(sample_df.columns)
     return sample_df
 
@@ -254,6 +253,7 @@ def create_inviews_vectors(behavior_df):
                 contrast_emb_df.filter(pl.col('article_id') == item_id)['contrastive_vector'].to_list())
         inviews_vectors.append(np.array(inview_vectors).mean(axis=0))
     return inviews_ids["impression_id"], np.array(inviews_vectors).squeeze(axis=1)
+
 
 print("Create a representation of the inviews")
 behavior_file_test = os.path.join(test_path, "behaviors.parquet")
