@@ -1,6 +1,7 @@
 import numpy as np
 import random
 import json
+import gc
 
 try:
     import polars as pl
@@ -69,20 +70,34 @@ def slice_join_dataframes(
         df2: pl.DataFrame,
         on: str,
         how: str,
+        chunk_size: int
 ) -> pl.DataFrame:
     """
     Join two dataframes optimized for memory efficiency.
     """
-    return pl.concat(
-        (
-            rows.join(
-                df2,
-                on=on,
-                how=how,
-            )
-            for rows in df1.iter_slices()
-        )
-    )
+    result_chunks = []
+
+    for i, rows in enumerate(df1.iter_slices(chunk_size)):
+        print(f"Processing chunk {i + 1}")
+
+        # Perform the join operation
+        joined_chunk = rows.join(df2, on=on, how=how)
+
+        # Collect the result to the list
+        result_chunks.append(joined_chunk)
+
+        # Free memory by deleting the chunk and triggering garbage collection
+        del rows
+        gc.collect()
+
+    # Concatenate all chunks into a single DataFrame
+    result_df = pl.concat(result_chunks)
+
+    # Free memory by deleting the intermediate list and triggering garbage collection
+    del result_chunks
+    gc.collect()
+
+    return result_df
 
 
 def rename_columns(df: pl.DataFrame, map_dict: dict[str, str]) -> pl.DataFrame:
