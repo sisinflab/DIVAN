@@ -1,5 +1,6 @@
 import sys
 import os
+
 # extend the sys.path to fix the import problem
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir_two_up = os.path.dirname(os.path.dirname(current_dir))
@@ -13,30 +14,9 @@ import gc
 from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history)
-from utils.sampling import create_test_for_demo
+from utils.sampling import create_test_for_large
 from utils.polars_utils import slice_join_dataframes
 import warnings
-import tracemalloc
-import psutil
-
-tracemalloc.start()
-
-
-# Function to track memory usage using tracemalloc
-def trace_malloc():
-    current, peak = tracemalloc.get_traced_memory()
-    print(f"Current memory usage (Python objects): {current / 10 ** 9:.2f} GB")
-    print(f"Peak memory usage (Python objects): {peak / 10 ** 9:.2f} GB")
-
-# Function to track overall memory usage using psutil
-def print_memory_usage():
-    process = psutil.Process(os.getpid())
-    memory_info = process.memory_info()
-    print(f"Overall memory usage (process): {memory_info.rss / (1024 ** 3):.2f} GB")
-
-
-trace_malloc()
-print_memory_usage()
 
 warnings.filterwarnings("ignore")
 dataset_size = 'large'  # demo, small, large
@@ -53,8 +33,8 @@ contrast_emb_path = "contrastive_vector.parquet"
 dataset_version = f"Ebnerd_{dataset_size}_x1"
 MAX_SEQ_LEN = 50
 
-# download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
-# create_test_for_demo()
+download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
+create_test_for_large()
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -85,8 +65,6 @@ news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"])
 news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
 
 print("Compute news popularity...")
-trace_malloc()
-print_memory_usage()
 
 history_files = [os.path.join(train_path, "history.parquet"),
                  os.path.join(dev_path, "history.parquet"),
@@ -125,14 +103,10 @@ print("Save news info...")
 os.makedirs(dataset_version, exist_ok=True)
 news.write_json(f"./{dataset_version}/news_info.jsonl", row_oriented=True, pretty=True)
 
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
-
 print("Preprocess behavior data...")
 
 
-def join_data(data_path, chunk_size=5000):
+def join_data(data_path, chunk_size=500000):
     history_file = os.path.join(data_path, "history.parquet")
     behavior_file = os.path.join(data_path, "behaviors.parquet")
 
@@ -179,10 +153,6 @@ def join_data(data_path, chunk_size=5000):
     del history_chunks
     gc.collect()
 
-    # Measure memory usage
-    trace_malloc()
-    print_memory_usage()
-
     # Preprocess behavior data in chunks
     print("Preprocess behavior data in chunks...")
     sample_df = pl.read_parquet(behavior_file).drop(["gender", "postcode", "age"])
@@ -224,7 +194,6 @@ def join_data(data_path, chunk_size=5000):
     return sample_df
 
 
-
 print("\nWriting train...")
 train_df = join_data(train_path)
 print(train_df.head())
@@ -232,9 +201,6 @@ print("Train samples", train_df.shape)
 train_df.write_csv(f"./{dataset_version}/train.csv")
 del train_df
 gc.collect()
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nWriting validation...")
 valid_df = join_data(dev_path)
@@ -243,9 +209,6 @@ print("Validation samples", valid_df.shape)
 valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
 gc.collect()
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nWriting test2...")
 test2_df = join_data(test2_path)
@@ -254,9 +217,6 @@ print("Test2 samples", test2_df.shape)
 test2_df.write_csv(f"./{dataset_version}/test2.csv")
 del test2_df
 gc.collect()
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nWriting test...")
 test_df = join_data(test_path)
@@ -265,10 +225,6 @@ print("Test samples", test_df.shape)
 test_df.write_csv(f"./{dataset_version}/test.csv")
 del test_df
 gc.collect()
-
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nPreprocess pretrained embeddings...")
 image_emb_df = pl.read_parquet(image_emb_path)
@@ -341,9 +297,3 @@ os.remove("contrastive_vector.parquet")
 os.remove("image_embeddings.parquet")
 
 print("All done.")
-
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
-
-tracemalloc.stop()
