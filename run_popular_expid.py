@@ -33,7 +33,7 @@ import argparse
 import os
 from pathlib import Path
 
-dataset = "demo"  # small, large
+dataset = "large"  # small, large
 
 if __name__ == '__main__':
     ''' Usage: python run_popular_expid.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
@@ -41,7 +41,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_popular_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'Popular_ebnerd_demo_x1',
+    parser.add_argument('--expid', type=str, default=f'Popular_ebnerd_{dataset}_x1',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())

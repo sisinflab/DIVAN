@@ -15,6 +15,7 @@
 # =========================================================================
 import sys
 import os
+
 # extend the sys.path to fix the import problem
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir_two_up = os.path.dirname(os.path.dirname(current_dir))
@@ -23,7 +24,6 @@ import polars as pl
 import gc
 from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (compute_item_popularity_scores, get_enriched_user_history)
-from utils.sampling import create_test2
 
 import warnings
 
@@ -34,7 +34,6 @@ dataset_size = 'large'  # demo, small, large
 train_path = "./train/"
 dev_path = "./validation/"
 test_path = "./test/"
-test2_path = "./test2/"
 
 image_emb_path = "image_embeddings.parquet"
 contrast_emb_path = "contrastive_vector.parquet"
@@ -42,9 +41,7 @@ contrast_emb_path = "contrastive_vector.parquet"
 dataset_version = f"Ebnerd_{dataset_size}_pop"
 MAX_SEQ_LEN = 50
 
-download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
-print("Create test2...")
-create_test2()
+# download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -53,12 +50,12 @@ train_news = pl.scan_parquet(train_news_file)
 test_news_file = os.path.join(test_path, "articles.parquet")
 test_news = pl.scan_parquet(test_news_file)
 
-test2_news_file = os.path.join(test2_path, "articles.parquet")
-test2_news = pl.scan_parquet(test2_news_file)
-
-news = pl.concat([train_news, test_news, test2_news])
+news = pl.concat([train_news, test_news])
 news = news.unique(subset=['article_id'])
 news = news.fill_null("")
+
+del train_news, test_news
+gc.collect()
 
 news = news.select('article_id')
 
@@ -69,9 +66,8 @@ valid_history_file = os.path.join(dev_path, "history.parquet")
 valid_history = pl.scan_parquet(valid_history_file)
 test_history_file = os.path.join(test_path, "history.parquet")
 test_history = pl.scan_parquet(test_history_file)
-test2_history_file = os.path.join(test2_path, "history.parquet")
-test2_history = pl.scan_parquet(test2_history_file)
-history = pl.concat([train_history, valid_history, test_history, test2_history])
+
+history = pl.concat([train_history, valid_history, test_history])
 history = history.unique(subset=['user_id'])
 history = history.fill_null("")
 
@@ -82,17 +78,17 @@ train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
 train_behaviors = pl.scan_parquet(train_behaviors_file)
 valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
 valid_behaviors = pl.scan_parquet(valid_behaviors_file)
-test2_behaviors_file = os.path.join(test2_path, "behaviors.parquet")
-test2_behaviors = pl.scan_parquet(test2_behaviors_file)
-behaviors = pl.concat([train_behaviors, valid_behaviors, test2_behaviors])
+behaviors = pl.concat([train_behaviors, valid_behaviors])
 
 behaviors = behaviors.unique(subset=['impression_id'])
 behaviors = behaviors.fill_null("")
+del train_behaviors, valid_behaviors
+gc.collect()
 
 R = get_enriched_user_history(behaviors, history)
 popularity_scores = compute_item_popularity_scores(R)
 
-del history
+del R, history, behaviors
 gc.collect()
 
 news = news.with_columns(
@@ -104,6 +100,9 @@ print("Save news info...")
 os.makedirs(dataset_version, exist_ok=True)
 with open(f"./{dataset_version}/news_info.jsonl", "w") as f:
     f.write(news.write_json(row_oriented=True, pretty=True))
+
+del popularity_scores
+gc.collect()
 
 print("Preprocess behavior data...")
 
@@ -142,6 +141,7 @@ print(train_df.head())
 print("Train samples", train_df.shape)
 train_df.write_csv(f"./{dataset_version}/train.csv")
 del train_df
+gc.collect()
 
 valid_df = join_data(dev_path)
 print(valid_df.head())
@@ -150,20 +150,12 @@ valid_df.write_csv(f"./{dataset_version}/valid.csv")
 del valid_df
 gc.collect()
 
-test2_df = join_data(test2_path)
-print(test2_df.head())
-print("Test2 samples", test2_df.shape)
-test2_df.write_csv(f"./{dataset_version}/test2.csv")
-del test2_df
-gc.collect()
-
 test_df = join_data(test_path)
 print(test_df.head())
 print("Test samples", test_df.shape)
 test_df.write_csv(f"./{dataset_version}/test.csv")
 del test_df
 gc.collect()
-
 
 # remove unuseful files and directories
 # os.remove('train/behaviors.parquet')
@@ -177,9 +169,6 @@ gc.collect()
 # os.remove('validation/behaviors.parquet')
 # os.remove('validation/history.parquet')
 # os.removedirs("validation")
-# os.remove('test2/behaviors.parquet')
-# os.remove('test2/history.parquet')
-# os.removedirs("test2")
 # os.remove("contrastive_vector.parquet")
 # os.remove("image_embeddings.parquet")
 
