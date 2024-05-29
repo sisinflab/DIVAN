@@ -4,7 +4,7 @@ import zipfile
 import requests
 import io
 
-def create_test_for_demo():
+def create_test2():
     dataset_url = f"https://ebnerd-dataset.s3.eu-west-1.amazonaws.com/ebnerd_large.zip"
     response_dataset = requests.get(dataset_url)
     with zipfile.ZipFile(io.BytesIO(response_dataset.content)) as zip_ref:
@@ -43,6 +43,7 @@ def create_test_for_demo():
     os.remove("./Ebnerd_large/validation/behaviors.parquet")
     os.remove("./Ebnerd_large/validation/history.parquet")
     os.removedirs("./Ebnerd_large/validation/")
+
 
 def create_test_for_large():
     print("Creating test set for Ebnerd large")
