@@ -1174,32 +1174,24 @@ def encode_date_list(lst):
     return [x.timestamp() for x in lst]
 
 
-def get_enriched_user_history(behavior_df: pl.LazyFrame, history_df: pl.LazyFrame, chunk_size=10000) -> list[np.array]:
-    # Collect necessary columns from the DataFrames
-    behavior_df = behavior_df.select(['user_id', 'article_ids_clicked'])
-    history_df = history_df.select(['user_id', 'article_id_fixed'])
+def get_enriched_user_history(behavior_df: pl.LazyFrame, history_df: pl.LazyFrame) -> list[np.array]:
+    # Select and explode columns in lazy mode
+    behavior_df = (
+        behavior_df.select(['user_id', 'article_ids_clicked'])
+        .explode('article_ids_clicked')
+        .rename({'article_ids_clicked': 'article_id'})
+    )
+    history_df = (
+        history_df.select(['user_id', 'article_id_fixed'])
+        .explode('article_id_fixed')
+        .rename({'article_id_fixed': 'article_id'})
+    )
 
-    # Explode the lists to have one article ID per row
-    behavior_df = behavior_df.explode('article_ids_clicked')
-    history_df = history_df.explode('article_id_fixed')
-
-    # Rename columns to match before concatenation
-    behavior_df = behavior_df.rename({'article_ids_clicked': 'article_id'})
-    history_df = history_df.rename({'article_id_fixed': 'article_id'})
-
-    # Combine the behavior and history DataFrames
-    combined_df = pl.concat([history_df, behavior_df])
+    # Combine the behavior and history DataFrames in lazy mode
+    combined_df = pl.concat([history_df, behavior_df]).collect()
 
     # Group by user_id and aggregate the article IDs into a list
-    enriched_history_chunks = []
-    for chunk in combined_df.collect().iter_slices(chunk_size):
-        chunk = chunk.groupby('user_id').agg(pl.col('article_id').alias('article_ids'))
-        enriched_history_chunks.append(chunk)
-        del chunk
-        gc.collect()
-    enriched_history = pl.concat(enriched_history_chunks)
-    del enriched_history_chunks
-    gc.collect()
+    enriched_history = combined_df.groupby('user_id').agg(pl.col('article_id').alias('article_ids'))
 
     # Convert to list of np.array
     enriched_history_list = [np.array(ids) for ids in enriched_history['article_ids'].to_list()]
