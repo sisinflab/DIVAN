@@ -17,8 +17,9 @@ from datetime import datetime
 import gc
 import argparse
 import fuxictr_version
-from fuxictr import autotuner
+from utils import autotuner
 import warnings
+
 warnings.filterwarnings("ignore")
 
 dataset = "small"  # demo, small, large
@@ -29,11 +30,21 @@ if __name__ == '__main__':
                         help='The config file for para tuning.')
     parser.add_argument('--tag', type=str, default=None,
                         help='Use the tag to determine which expid to run (e.g. 001 for the first expid).')
-    parser.add_argument('--gpu', nargs='+', default=[7, 8, 9], help='The list of gpu indexes, -1 for cpu.')
+    parser.add_argument('--gpu', nargs='+', default=[0], help='The list of gpu indexes, -1 for cpu.')
+    parser.add_argument('--algorithm', type=str, default='tpe', choices=['grid', 'tpe'],
+                        help='The hyperparameter search algorithm to use (grid or tpe).')
+    parser.add_argument('--max_evals', type=int, default=20, help='The maximum number of evaluations for TPE.')
     args = vars(parser.parse_args())
+
     gpu_list = args['gpu']
     expid_tag = args['tag']
+    algorithm = args['algorithm']
+    max_evals = args['max_evals']
 
     # generate parameter space combinations
     config_dir = autotuner.enumerate_params(args['config'])
-    autotuner.grid_search(config_dir, gpu_list, expid_tag)
+
+    if algorithm == 'grid':
+        autotuner.grid_search(config_dir, gpu_list, expid_tag)
+    elif algorithm == 'tpe':
+        best = autotuner.tpe_search(config_dir, gpu_list, args['config'], script='run_expid.py', max_evals=max_evals)
