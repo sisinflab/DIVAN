@@ -18,7 +18,6 @@ from utils.polars_utils import (
     generate_unique_name,
     shuffle_list_column,
 )
-import polars as pl
 from utils.polars_utils import slice_join_dataframes
 
 from utils.constants import (
@@ -1235,3 +1234,13 @@ def compute_item_popularity_scores(R: Iterable[np.array]) -> dict[str, float]:
     R_flatten = np.concatenate(R)
     item_counts = Counter(R_flatten)
     return {item: (r_ui / U) for item, r_ui in item_counts.items()}
+
+
+def clean_dataframe(row):
+    # right ID is None, return the first one
+    if row[2] == None and row[3] == None:
+        return (row[0], row[1])
+    elif row[0] == None and row[1] == None:
+        return (row[2], row[3])
+    else:
+        return (row[0], list(set(row[1]).union(set(row[3]))))
