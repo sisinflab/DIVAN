@@ -7,37 +7,15 @@ sys.path.extend([parent_dir_two_up])
 
 import polars as pl
 import numpy as np
-from datetime import datetime
 from sklearn.decomposition import PCA
 import gc
 from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history)
-from utils.sampling import create_test_for_demo
-from utils.polars_utils import slice_join_dataframes
+from utils.polars_utils import slice_join_dataframes, concatenate_csv_files
 import warnings
-import tracemalloc
-import psutil
-from memory_profiler import profile
-
-tracemalloc.start()
 
 
-# Function to track memory usage using tracemalloc
-def trace_malloc():
-    current, peak = tracemalloc.get_traced_memory()
-    print(f"Current memory usage (Python objects): {current / 10 ** 9:.2f} GB")
-    print(f"Peak memory usage (Python objects): {peak / 10 ** 9:.2f} GB")
-
-# Function to track overall memory usage using psutil
-def print_memory_usage():
-    process = psutil.Process(os.getpid())
-    memory_info = process.memory_info()
-    print(f"Overall memory usage (process): {memory_info.rss / (1024 ** 3):.2f} GB")
-
-
-trace_malloc()
-print_memory_usage()
 
 warnings.filterwarnings("ignore")
 dataset_size = 'demo'  # demo, small, large
@@ -55,7 +33,7 @@ dataset_version = f"Ebnerd_{dataset_size}_x1"
 MAX_SEQ_LEN = 50
 
 # download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
-# create_test_for_demo()
+# create_test2()
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -86,8 +64,6 @@ news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"])
 news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
 
 print("Compute news popularity...")
-trace_malloc()
-print_memory_usage()
 
 history_files = [os.path.join(train_path, "history.parquet"),
                  os.path.join(dev_path, "history.parquet"),
@@ -111,7 +87,7 @@ behaviors = pl.concat(behaviors_dfs).unique(subset=['impression_id']).fill_null(
 del behaviors_dfs
 gc.collect()
 
-R = get_enriched_user_history(behaviors, history, chunk_size=5000)
+R = get_enriched_user_history(behaviors, history)
 popularity_scores = compute_item_popularity_scores(R)
 
 del history, R
@@ -126,12 +102,8 @@ print("Save news info...")
 os.makedirs(dataset_version, exist_ok=True)
 news.write_json(f"./{dataset_version}/news_info.jsonl", row_oriented=True, pretty=True)
 
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("Preprocess behavior data...")
-@profile
 def join_data(data_path, chunk_size=5000):
     history_file = os.path.join(data_path, "history.parquet")
     behavior_file = os.path.join(data_path, "behaviors.parquet")
@@ -178,14 +150,13 @@ def join_data(data_path, chunk_size=5000):
     history_df = pl.concat(history_chunks)
     del history_chunks
     gc.collect()
-
-    # Measure memory usage
-    trace_malloc()
-    print_memory_usage()
+    #os.remove(history_file)
 
     # Preprocess behavior data in chunks
     print("Preprocess behavior data in chunks...")
     sample_df = pl.read_parquet(behavior_file).drop(["gender", "postcode", "age"])
+    #os.remove(behavior_file)
+
     if "test/" in data_path:
         sample_df = (
             sample_df.rename({"article_ids_inview": "article_id"})
@@ -204,71 +175,78 @@ def join_data(data_path, chunk_size=5000):
 
     print("Joining data chunks...")
 
-    sample_df = (
-        news.pipe(slice_join_dataframes, df2=sample_df, on='article_id', how="left", chunk_size=chunk_size)
-        .pipe(slice_join_dataframes, history_df, on='user_id', how="left", chunk_size=chunk_size)
-        .with_columns(
-            publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
-            publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
-            impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
-            impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32)
+    chunk_csv_files = []
+
+    for i, rows in enumerate(sample_df.iter_slices(chunk_size)):
+        print(f"Processing chunk {i + 1}")
+
+        # Perform the join operation
+        joined_chunk = rows.join(news, on='article_id', how='left').join(history_df, on='user_id', how="left")
+
+        joined_chunk = (
+            joined_chunk.with_columns(
+                publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
+                publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
+                impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
+                impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32)
+            )
+            .with_columns(
+                pl.col("publish_days").clip_max(3).alias("publish_3day"),
+                pl.col("publish_days").clip_max(7).alias("publish_7day"),
+                pl.col("publish_days").clip_max(30),
+                pl.col("publish_hours").clip_max(24)
+            )
+            .drop(
+                ["impression_time", "published_time", "last_modified_time", "next_scroll_percentage",
+                 "next_read_time"])
         )
-        .with_columns(
-            pl.col("publish_days").clip_max(3).alias("publish_3day"),
-            pl.col("publish_days").clip_max(7).alias("publish_7day"),
-            pl.col("publish_days").clip_max(30),
-            pl.col("publish_hours").clip_max(24)
-        )
-        .drop(
-            ["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time"])
-    )
-    return sample_df
+
+        # Save the chunk to disk in csv format
+        chunk_csv_file = f"./{dataset_version}/test_chunk_{i}.csv"
+        chunk_csv_files.append(chunk_csv_file)
+        joined_chunk.write_csv(chunk_csv_file)
+
+        # Free memory by deleting the chunk and triggering garbage collection
+        del rows
+        del joined_chunk
+        gc.collect()
+
+    del sample_df
+    gc.collect()
+    return chunk_csv_files
 
 
 print("\nWriting train...")
-train_df = join_data(train_path)
-print(train_df.head())
-print("Train samples", train_df.shape)
-train_df.write_csv(f"./{dataset_version}/train.csv")
-del train_df
+train_chunk_csv_files = join_data(train_path, chunk_size=1000000)
+# Concatenate chunk files directly to disk
+output_file = f"./{dataset_version}/train.csv"
+concatenate_csv_files(train_chunk_csv_files, output_file)
+del train_chunk_csv_files
 gc.collect()
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nWriting validation...")
-valid_df = join_data(dev_path)
-print(valid_df.head())
-print("Validation samples", valid_df.shape)
-valid_df.write_csv(f"./{dataset_version}/valid.csv")
-del valid_df
+valid_chunk_csv_files = join_data(dev_path, chunk_size=1000000)
+# Concatenate chunk files directly to disk
+output_file = f"./{dataset_version}/valid.csv"
+concatenate_csv_files(valid_chunk_csv_files, output_file)
+del valid_chunk_csv_files
 gc.collect()
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nWriting test2...")
-test2_df = join_data(test2_path)
-print(test2_df.head())
-print("Test2 samples", test2_df.shape)
-test2_df.write_csv(f"./{dataset_version}/test2.csv")
-del test2_df
+test2_chunk_csv_files = join_data(test2_path, chunk_size=1000000)
+# Concatenate chunk files directly to disk
+output_file = f"./{dataset_version}/test2.csv"
+concatenate_csv_files(test2_chunk_csv_files, output_file)
+del test2_chunk_csv_files
 gc.collect()
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nWriting test...")
-test_df = join_data(test_path)
-print(test_df.head())
-print("Test samples", test_df.shape)
-test_df.write_csv(f"./{dataset_version}/test.csv")
-del test_df
+test_chunk_csv_files = join_data(test_path, chunk_size=1000000)
+# Concatenate chunk files directly to disk
+output_file = f"./{dataset_version}/test.csv"
+concatenate_csv_files(test_chunk_csv_files, output_file)
+del test_chunk_csv_files
 gc.collect()
-
-# Measure memory usage
-trace_malloc()
-print_memory_usage()
 
 print("\nPreprocess pretrained embeddings...")
 image_emb_df = pl.read_parquet(image_emb_path)
@@ -341,8 +319,3 @@ os.remove("contrastive_vector.parquet")
 os.remove("image_embeddings.parquet")
 
 print("All done.")
-
-# Measure memory usage
-trace_malloc()
-
-tracemalloc.stop()
