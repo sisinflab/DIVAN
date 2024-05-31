@@ -15,12 +15,12 @@ def grank(x):
 
 experiment_id = "popular_ranker"
 dataset = "large"
-ans = pl.scan_csv(f"./data/Ebnerd_{dataset}/Ebnerd_{dataset}_x1/test.csv")
-ans = ans.select(['impression_id', 'user_id', 'popularity_score'])
+ans = pl.scan_csv(f"./data/Ebnerd_{dataset}/Ebnerd_{dataset}_pop/test.csv")
+ans = ans.select(['impression_id', 'popularity_score'])
 logging.info("Predicting scores...")
 ans = ans.rename({'popularity_score': 'score'}).collect().to_pandas()
 logging.info("Ranking samples...")
-ans = ans.groupby(['impression_id', 'user_id'], sort=False).apply(grank).reset_index(drop=True)
+ans = ans.groupby(['impression_id'], sort=False).apply(grank).reset_index(drop=True)
 logging.info("Writing results...")
 os.makedirs("submit", exist_ok=True)
 with open('submit/predictions.txt', "w") as fout:

@@ -16,6 +16,7 @@
 # =========================================================================
 
 import torch
+import torch.nn as nn
 import numpy as np
 from fuxictr.metrics import evaluate_metrics
 from fuxictr.pytorch.torch_utils import get_device
@@ -24,12 +25,13 @@ import os, sys
 from tqdm import tqdm
 
 
-class PopularRanker():
+class PopularRanker(nn.Module):
     def __init__(self,
                  feature_map,
                  model_id="PopularRanker",
                  gpu=-1,
                  **kwargs):
+        super(PopularRanker, self).__init__()
         self.validation_metrics = kwargs["metrics"]
         self._verbose = kwargs["verbose"]
         self.feature_map = feature_map
