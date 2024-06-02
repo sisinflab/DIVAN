@@ -3,6 +3,7 @@ import os
 import polars as pl
 import shutil
 
+
 def grank(x):
     scores = x["score"].tolist()
     tmp = [(i, s) for i, s in enumerate(scores)]
@@ -15,6 +16,7 @@ def grank(x):
 
 experiment_id = "popular_ranker"
 dataset = "large"
+print("Reading test set...")
 ans = pl.scan_csv(f"./data/Ebnerd_{dataset}/Ebnerd_{dataset}_pop/test.csv")
 ans = ans.select(['impression_id', 'popularity_score'])
 logging.info("Predicting scores...")

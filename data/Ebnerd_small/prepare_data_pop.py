@@ -23,7 +23,7 @@ sys.path.extend([parent_dir_two_up])
 import polars as pl
 import gc
 from utils.download_dataset import download_ebnerd_dataset
-from utils.functions import (compute_item_popularity_scores, get_enriched_user_history)
+from utils.functions import (compute_item_popularity_scores, get_enriched_user_history, clean_dataframe)
 
 import warnings
 
@@ -41,7 +41,7 @@ contrast_emb_path = "contrastive_vector.parquet"
 dataset_version = f"Ebnerd_{dataset_size}_pop"
 MAX_SEQ_LEN = 50
 
-#download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
+# download_ebnerd_dataset(dataset_size=dataset_size, train_path=train_path, val_path=dev_path, test_path=test_path)
 
 print("Preprocess news info...")
 train_news_file = os.path.join(train_path, "articles.parquet")
@@ -58,16 +58,20 @@ news = news.select('article_id')
 
 print("Compute news popularity...")
 train_history_file = os.path.join(train_path, "history.parquet")
-train_history = pl.scan_parquet(train_history_file)
+train_history = pl.scan_parquet(train_history_file).select("user_id", "article_id_fixed")
 
 valid_history_file = os.path.join(dev_path, "history.parquet")
-valid_history = pl.scan_parquet(valid_history_file)
+valid_history = pl.scan_parquet(valid_history_file).select("user_id", "article_id_fixed")
 
 test_history_file = os.path.join(test_path, "history.parquet")
-test_history = pl.scan_parquet(test_history_file)
+test_history = pl.scan_parquet(test_history_file).select("user_id", "article_id_fixed")
 
+# history = train_history.join(valid_history, on="user_id", how="outer")
 history = pl.concat([train_history, valid_history, test_history])
-history = history.unique(subset=['user_id'])
+history = history.groupby("user_id").agg(pl.col("article_id_fixed"))
+history = history.with_columns(
+    pl.col("article_id_fixed").map_elements(
+        lambda row: list(set([x for xs in row for x in xs]))).cast(pl.List(pl.Int32))).collect()
 history = history.fill_null("")
 
 del train_history, valid_history, test_history
@@ -82,7 +86,7 @@ valid_behaviors = pl.scan_parquet(valid_behaviors_file)
 behaviors = pl.concat([train_behaviors, valid_behaviors])
 
 behaviors = behaviors.unique(subset=['impression_id'])
-behaviors = behaviors.fill_null("")
+behaviors = behaviors.fill_null("").collect()
 
 del train_behaviors, valid_behaviors
 gc.collect()
@@ -94,7 +98,7 @@ del history, behaviors, R
 gc.collect()
 
 news = news.with_columns(
-    pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0)).alias("popularity_score")
+    pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0.0)).alias("popularity_score")
 ).collect()
 
 del train_news, test_news
@@ -130,7 +134,7 @@ def join_data(data_path):
             .drop(["article_ids_clicked"])
         )
     sample_df = (
-        sample_df.select("impression_id", "article_id", "click").collect()
+        sample_df.select("impression_id", "article_id", "click", "user_id").collect()
         .join(news, on='article_id', how="left")
     )
     print(sample_df.columns)
@@ -142,6 +146,7 @@ print(train_df.head())
 print("Train samples", train_df.shape)
 train_df.write_csv(f"./{dataset_version}/train.csv")
 del train_df
+gc.collect()
 
 valid_df = join_data(dev_path)
 print(valid_df.head())
@@ -156,7 +161,6 @@ print("Test samples", test_df.shape)
 test_df.write_csv(f"./{dataset_version}/test.csv")
 del test_df
 gc.collect()
-
 
 # remove unuseful files and directories
 # os.remove('train/behaviors.parquet')

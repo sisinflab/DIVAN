@@ -1173,10 +1173,10 @@ def encode_date_list(lst):
     return [x.timestamp() for x in lst]
 
 
-def get_enriched_user_history(behavior_df: pl.LazyFrame, history_df: pl.LazyFrame) -> list[np.array]:
+def get_enriched_user_history(behavior_df: pl.DataFrame, history_df: pl.DataFrame) -> list[np.array]:
     # Collect necessary columns from the DataFrames
-    behavior_df = behavior_df.select(['user_id', 'article_ids_clicked']).collect()
-    history_df = history_df.select(['user_id', 'article_id_fixed']).collect()
+    behavior_df = behavior_df.select(['user_id', 'article_ids_clicked'])
+    history_df = history_df.select(['user_id', 'article_id_fixed'])
 
     # Explode the lists to have one article ID per row
     behavior_df = behavior_df.explode('article_ids_clicked')
@@ -1237,10 +1237,4 @@ def compute_item_popularity_scores(R: Iterable[np.array]) -> dict[str, float]:
 
 
 def clean_dataframe(row):
-    # right ID is None, return the first one
-    if row[2] == None and row[3] == None:
-        return (row[0], row[1])
-    elif row[0] == None and row[1] == None:
-        return (row[2], row[3])
-    else:
-        return (row[0], list(set(row[1]).union(set(row[3]))))
+    return (row[0], list(set([x for xs in row[1] for x in xs])))
