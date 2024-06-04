@@ -18,7 +18,7 @@ experiment_id = "popular_ranker"
 dataset = "large"
 print("Reading test set...")
 ans = pl.scan_csv(f"./data/Ebnerd_{dataset}/Ebnerd_{dataset}_pop/test.csv")
-ans = ans.select(['impression_id', 'popularity_score'])
+ans = ans.select(['impression_id', 'user_id', 'popularity_score'])
 logging.info("Predicting scores...")
 ans = ans.rename({'popularity_score': 'score'}).collect().to_pandas()
 logging.info("Ranking samples...")
