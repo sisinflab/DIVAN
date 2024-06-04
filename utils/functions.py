@@ -1238,3 +1238,6 @@ def compute_item_popularity_scores(R: Iterable[np.array]) -> dict[str, float]:
 
 def clean_dataframe(row):
     return (row[0], list(set([x for xs in row[1] for x in xs])))
+
+def exponential_decay(freshness, alpha=0.1):
+    return np.exp(-alpha * freshness)

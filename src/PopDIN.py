@@ -1,21 +1,4 @@
-# =========================================================================
-# Copyright (C) 2024. FuxiCTR Authors. All rights reserved.
-# Copyright (C) 2022. Huawei Technologies Co., Ltd. All rights reserved.
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# =========================================================================
 import numpy as np
-import pandas as pd
 import torch
 from torch import nn
 from pandas.core.common import flatten
@@ -29,7 +12,7 @@ import sys
 from torch.utils.tensorboard import SummaryWriter
 
 
-class DIN(BaseModel):
+class PopDIN(BaseModel):
     def __init__(self,
                  feature_map,
                  model_id="DIN",
@@ -50,12 +33,12 @@ class DIN(BaseModel):
                  embedding_regularizer=None,
                  net_regularizer=None,
                  **kwargs):
-        super(DIN, self).__init__(feature_map,
-                                  model_id=model_id,
-                                  gpu=gpu,
-                                  embedding_regularizer=embedding_regularizer,
-                                  net_regularizer=net_regularizer,
-                                  **kwargs)
+        super(PopDIN, self).__init__(feature_map,
+                                     model_id=model_id,
+                                     gpu=gpu,
+                                     embedding_regularizer=embedding_regularizer,
+                                     net_regularizer=net_regularizer,
+                                     **kwargs)
         if not isinstance(din_target_field, list):
             din_target_field = [din_target_field]
         self.din_target_field = din_target_field
@@ -82,7 +65,6 @@ class DIN(BaseModel):
                              output_dim=1,
                              hidden_units=dnn_hidden_units,
                              hidden_activations=dnn_activations,
-                             output_activation=self.output_activation,
                              dropout_rates=net_dropout,
                              batch_norm=batch_norm)
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
@@ -90,8 +72,23 @@ class DIN(BaseModel):
         self.model_to_device()
         self.loss_name = kwargs["loss"]
 
+        num_users = self.feature_map.features['user_id']['vocab_size']
+
+        # Initialize embedding layers for alpha and beta
+        self.alpha_embedding = nn.Embedding(num_users, 1)
+        self.alpha_embedding.weight.data.fill_(0.5)  # Initialize alpha to 0.5
+
+    def get_virality_score(self, inputs):
+        return inputs[:, self.feature_map.get_column_index("virality_score")]
+
     def forward(self, inputs):
         X = self.get_inputs(inputs)
+        labels = self.get_labels(inputs)
+        virality_scores = self.get_virality_score(inputs)
+        eps = 1e-45
+        y_pred_viral = - torch.log(
+            (1 - virality_scores + eps) / (virality_scores + eps)).unsqueeze(1)  # get the virality scores
+        user_ids = X["user_id"].long()
         feature_emb_dict = self.embedding_layer(X)
         for idx, (target_field, sequence_field) in enumerate(zip(self.din_target_field,
                                                                  self.din_sequence_field)):
@@ -104,8 +101,15 @@ class DIN(BaseModel):
                                         pooling_emb.split(self.embedding_dim, dim=-1)):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
-        y_pred = self.dnn(feature_emb)
-        return_dict = {"y_pred": y_pred}
+        y_pred_din = self.dnn(feature_emb)
+        # Get user-specific alpha and beta
+        alpha = self.output_activation(
+            self.alpha_embedding(user_ids))  # sigmoid alpha so that it remains in the range [0,1]
+        # Combine the two prediction scores with user-specific parameters
+        y_pred = alpha * y_pred_din + (1 - alpha) * y_pred_viral
+        return_dict = {"y_pred": self.output_activation(y_pred).float(),
+                       "positive_y_pred_din": y_pred_din[labels == 1].mean(),
+                       "positive_y_pred_viral": y_pred_viral[labels == 1].mean()}
         return return_dict
 
     def train_step(self, batch_data):
@@ -115,18 +119,48 @@ class DIN(BaseModel):
 
         if self.loss_name == 'bpr':
             group_id = self.get_group_id(batch_data)
-            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true, return_dict["y_pred"])
+            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true,
+                                                                                        return_dict["y_pred"])
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
             loss = self.compute_loss(return_dict, y_true)
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
         self.optimizer.step()
-        return loss
+        return loss, return_dict
+
+    def train_epoch(self, data_generator):
+        self._batch_index = 0
+        train_loss = 0
+        mean_din_scores = 0
+        mean_virality_scores = 0
+
+        self.train()
+        if self._verbose == 0:
+            batch_iterator = data_generator
+        else:
+            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
+        for batch_index, batch_data in enumerate(batch_iterator):
+            self._batch_index = batch_index
+            self._total_steps += 1
+            loss, return_dict = self.train_step(batch_data)
+            mean_din_scores += return_dict['positive_y_pred_din']
+            mean_virality_scores += return_dict['positive_y_pred_viral']
+            train_loss += loss.item()
+            if self._total_steps % self._eval_steps == 0:
+                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
+                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
+                self.writer.add_scalar("mean_din_scores", mean_din_scores / self._eval_steps, self._epoch_index)
+                self.writer.add_scalar("mean_virality_scores", mean_virality_scores / self._eval_steps,
+                                       self._epoch_index)
+                train_loss = 0
+                self.eval_step()
+            if self._stop_training:
+                break
 
     def fit(self, data_generator, epochs=1, validation_data=None,
             max_gradient_norm=10., **kwargs):
-        self.writer = SummaryWriter(comment=self.model_id)  # NEW LINE HERE
+        self.writer = SummaryWriter(comment=self.model_id)
         self.valid_gen = validation_data
         self._max_gradient_norm = max_gradient_norm
         self._best_metric = np.Inf if self._monitor_mode == "min" else -np.Inf
@@ -152,27 +186,6 @@ class DIN(BaseModel):
         logging.info("Load best model: {}".format(self.checkpoint))
         self.writer.close()
         self.load_weights(self.checkpoint)
-
-    def train_epoch(self, data_generator):
-        self._batch_index = 0
-        train_loss = 0
-        self.train()
-        if self._verbose == 0:
-            batch_iterator = data_generator
-        else:
-            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
-        for batch_index, batch_data in enumerate(batch_iterator):
-            self._batch_index = batch_index
-            self._total_steps += 1
-            loss = self.train_step(batch_data)
-            train_loss += loss.item()
-            if self._total_steps % self._eval_steps == 0:
-                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
-                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
-                train_loss = 0
-                self.eval_step()
-            if self._stop_training:
-                break
 
     def eval_step(self):
         logging.info('Evaluation @epoch {} - batch {}: '.format(self._epoch_index + 1, self._batch_index + 1))
