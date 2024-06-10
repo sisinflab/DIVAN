@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
+import os
 import numpy as np
-import pandas as pd
 import torch
 from torch import nn
 from pandas.core.common import flatten
@@ -27,6 +27,7 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 
 class DIN(BaseModel):
@@ -89,9 +90,12 @@ class DIN(BaseModel):
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
+        self.checkpoint = os.path.abspath(
+            os.path.join(self.model_dir, self.model_id + datetime.now().strftime("%b%d_%H-%M-%S") + ".model"))
 
     def forward(self, inputs):
         X = self.get_inputs(inputs)
+        labels = self.get_labels(inputs)
         feature_emb_dict = self.embedding_layer(X)
         for idx, (target_field, sequence_field) in enumerate(zip(self.din_target_field,
                                                                  self.din_sequence_field)):
@@ -105,7 +109,12 @@ class DIN(BaseModel):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
         y_pred = self.dnn(feature_emb)
-        return_dict = {"y_pred": y_pred}
+        if self._total_steps % self._eval_steps == 0:
+            return_dict = {"y_pred": y_pred.float(),
+                           "positive_y_pred_din": y_pred[labels == 1].mean(),
+                           "negative_y_pred_din": y_pred[labels == 0].mean()}
+        else:
+            return_dict = {"y_pred": y_pred.float()}
         return return_dict
 
     def train_step(self, batch_data):
@@ -115,18 +124,19 @@ class DIN(BaseModel):
 
         if self.loss_name == 'bpr':
             group_id = self.get_group_id(batch_data)
-            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true, return_dict["y_pred"])
+            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true,
+                                                                                        return_dict["y_pred"])
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
             loss = self.compute_loss(return_dict, y_true)
         loss.backward()
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
         self.optimizer.step()
-        return loss
+        return loss, return_dict
 
     def fit(self, data_generator, epochs=1, validation_data=None,
             max_gradient_norm=10., **kwargs):
-        self.writer = SummaryWriter(comment=self.model_id)  # NEW LINE HERE
+        self.writer = SummaryWriter(comment=self.model_id)
         self.valid_gen = validation_data
         self._max_gradient_norm = max_gradient_norm
         self._best_metric = np.Inf if self._monitor_mode == "min" else -np.Inf
@@ -164,11 +174,15 @@ class DIN(BaseModel):
         for batch_index, batch_data in enumerate(batch_iterator):
             self._batch_index = batch_index
             self._total_steps += 1
-            loss = self.train_step(batch_data)
+            loss, return_dict = self.train_step(batch_data)
             train_loss += loss.item()
             if self._total_steps % self._eval_steps == 0:
                 logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
                 self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
+                self.writer.add_scalars("mean_din_scores", {
+                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
+                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
+                }, self._epoch_index)
                 train_loss = 0
                 self.eval_step()
             if self._stop_training:
@@ -250,6 +264,7 @@ class DIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+            self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
             return val_logs
 
     def evaluate_test(self, data_generator, metrics=None):

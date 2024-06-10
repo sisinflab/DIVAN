@@ -1,3 +1,5 @@
+import os
+import torch.nn.functional as F
 import numpy as np
 import torch
 from torch import nn
@@ -10,12 +12,13 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
 
 
-class PopDIN(BaseModel):
+class VDIN(BaseModel):
     def __init__(self,
                  feature_map,
-                 model_id="DIN",
+                 model_id="VDIN",
                  gpu=-1,
                  dnn_hidden_units=[512, 128, 64],
                  dnn_activations="ReLU",
@@ -33,12 +36,12 @@ class PopDIN(BaseModel):
                  embedding_regularizer=None,
                  net_regularizer=None,
                  **kwargs):
-        super(PopDIN, self).__init__(feature_map,
-                                     model_id=model_id,
-                                     gpu=gpu,
-                                     embedding_regularizer=embedding_regularizer,
-                                     net_regularizer=net_regularizer,
-                                     **kwargs)
+        super(VDIN, self).__init__(feature_map,
+                                   model_id=model_id,
+                                   gpu=gpu,
+                                   embedding_regularizer=embedding_regularizer,
+                                   net_regularizer=net_regularizer,
+                                   **kwargs)
         if not isinstance(din_target_field, list):
             din_target_field = [din_target_field]
         self.din_target_field = din_target_field
@@ -64,6 +67,7 @@ class PopDIN(BaseModel):
         self.dnn = MLP_Block(input_dim=feature_map.sum_emb_out_dim(),
                              output_dim=1,
                              hidden_units=dnn_hidden_units,
+                             #output_activation=self.output_activation,
                              hidden_activations=dnn_activations,
                              dropout_rates=net_dropout,
                              batch_norm=batch_norm)
@@ -71,12 +75,8 @@ class PopDIN(BaseModel):
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
-
-        num_users = self.feature_map.features['user_id']['vocab_size']
-
-        # Initialize embedding layers for alpha and beta
-        self.alpha_embedding = nn.Embedding(num_users, 1)
-        self.alpha_embedding.weight.data.fill_(0.5)  # Initialize alpha to 0.5
+        self.checkpoint = os.path.abspath(
+            os.path.join(self.model_dir, self.model_id + datetime.now().strftime("%b%d_%H-%M-%S") + ".model"))
 
     def get_virality_score(self, inputs):
         return inputs[:, self.feature_map.get_column_index("virality_score")]
@@ -84,11 +84,10 @@ class PopDIN(BaseModel):
     def forward(self, inputs):
         X = self.get_inputs(inputs)
         labels = self.get_labels(inputs)
-        virality_scores = self.get_virality_score(inputs)
+        self.virality_scores = self.get_virality_score(inputs).unsqueeze(1)
         eps = 1e-45
         y_pred_viral = - torch.log(
-            (1 - virality_scores + eps) / (virality_scores + eps)).unsqueeze(1)  # get the virality scores
-        user_ids = X["user_id"].long()
+            (1 - self.virality_scores + eps) / (self.virality_scores + eps))  # get the virality scores
         feature_emb_dict = self.embedding_layer(X)
         for idx, (target_field, sequence_field) in enumerate(zip(self.din_target_field,
                                                                  self.din_sequence_field)):
@@ -102,14 +101,20 @@ class PopDIN(BaseModel):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
         y_pred_din = self.dnn(feature_emb)
-        # Get user-specific alpha and beta
-        alpha = self.output_activation(
-            self.alpha_embedding(user_ids))  # sigmoid alpha so that it remains in the range [0,1]
-        # Combine the two prediction scores with user-specific parameters
-        y_pred = alpha * y_pred_din + (1 - alpha) * y_pred_viral
-        return_dict = {"y_pred": self.output_activation(y_pred).float(),
-                       "positive_y_pred_din": y_pred_din[labels == 1].mean(),
-                       "positive_y_pred_viral": y_pred_viral[labels == 1].mean()}
+
+        # Combine the two prediction scores
+        y_pred = self.output_activation(y_pred_din + y_pred_viral)
+
+        if self._total_steps % self._eval_steps == 0:
+            return_dict = {"y_pred": y_pred.float(),
+                           "positive_y_pred": y_pred[labels == 1].mean(),
+                           "negative_y_pred": y_pred[labels == 0].mean(),
+                           "positive_y_pred_din": y_pred_din[labels == 1].mean(),
+                           "negative_y_pred_din": y_pred_din[labels == 0].mean(),
+                           "positive_y_pred_viral": y_pred_viral[labels == 1].mean(),
+                           "negative_y_pred_viral": y_pred_viral[labels == 0].mean()}
+        else:
+            return_dict = {"y_pred": y_pred.float()}
         return return_dict
 
     def train_step(self, batch_data):
@@ -119,7 +124,8 @@ class PopDIN(BaseModel):
 
         if self.loss_name == 'bpr':
             group_id = self.get_group_id(batch_data)
-            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true,
+            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
+                                                                                        y_true,
                                                                                         return_dict["y_pred"])
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
@@ -132,8 +138,6 @@ class PopDIN(BaseModel):
     def train_epoch(self, data_generator):
         self._batch_index = 0
         train_loss = 0
-        mean_din_scores = 0
-        mean_virality_scores = 0
 
         self.train()
         if self._verbose == 0:
@@ -144,15 +148,24 @@ class PopDIN(BaseModel):
             self._batch_index = batch_index
             self._total_steps += 1
             loss, return_dict = self.train_step(batch_data)
-            mean_din_scores += return_dict['positive_y_pred_din']
-            mean_virality_scores += return_dict['positive_y_pred_viral']
+
             train_loss += loss.item()
+
             if self._total_steps % self._eval_steps == 0:
                 logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
                 self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
-                self.writer.add_scalar("mean_din_scores", mean_din_scores / self._eval_steps, self._epoch_index)
-                self.writer.add_scalar("mean_virality_scores", mean_virality_scores / self._eval_steps,
-                                       self._epoch_index)
+                self.writer.add_scalars("mean_comb_scores", {
+                    "mean_positive_comb_scores": return_dict['positive_y_pred'].mean() / self._eval_steps,
+                    "mean_negative_comb_scores": return_dict['negative_y_pred'] / self._eval_steps
+                }, self._epoch_index)
+                self.writer.add_scalars("mean_din_scores", {
+                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
+                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
+                }, self._epoch_index)
+                self.writer.add_scalars("mean_virality_scores", {
+                    "mean_positive_virality_scores": return_dict['positive_y_pred_viral'] / self._eval_steps,
+                    "mean_negative_virality_scores": return_dict['negative_y_pred_viral'] / self._eval_steps
+                }, self._epoch_index)
                 train_loss = 0
                 self.eval_step()
             if self._stop_training:
@@ -174,9 +187,9 @@ class PopDIN(BaseModel):
             self._eval_steps = self._steps_per_epoch
 
         logging.info("Start training: {} batches/epoch".format(self._steps_per_epoch))
-        logging.info("************ Epoch=1 start ************")
         for epoch in range(epochs):
             self._epoch_index = epoch
+            logging.info("************ Epoch={} start ************".format(self._epoch_index + 1))
             self.train_epoch(data_generator)
             if self._stop_training:
                 break
@@ -263,6 +276,7 @@ class PopDIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+            self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
             return val_logs
 
     def evaluate_test(self, data_generator, metrics=None):
@@ -288,3 +302,11 @@ class PopDIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             return val_logs
+
+    # def compute_loss(self, return_dict, y_true):
+    #     loss = self.loss_fn(return_dict["y_pred"], y_true, reduction='mean')
+    #     debiasing_loss = torch.mean(torch.abs(return_dict["y_pred"] - self.virality_scores))
+    #     margin_loss = -(
+    #         F.logsigmoid(return_dict["y_pred"][y_true == 1].mean() - return_dict["y_pred"][y_true == 0].mean()))
+    #     loss += self.regularization_loss() + debiasing_loss + margin_loss
+    #     return loss

@@ -26,7 +26,7 @@ dataset = "demo"  # demo, small, large
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=f'./config/PopDIN_ebnerd_{dataset}_x1_tuner_config_01.yaml',
+    parser.add_argument('--config', type=str, default=f'./config/VDIN_ebnerd_{dataset}_x1_tuner_config_01.yaml',
                         help='The config file for para tuning.')
     parser.add_argument('--tag', type=str, default=None,
                         help='Use the tag to determine which expid to run (e.g. 001 for the first expid).')

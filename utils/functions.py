@@ -1236,8 +1236,35 @@ def compute_item_popularity_scores(R: Iterable[np.array]) -> dict[str, float]:
     return {item: (r_ui / U) for item, r_ui in item_counts.items()}
 
 
+def create_inviews_vectors(behavior_df, contrast_emb_df):
+    # Explode the article_ids_inview column to have one article_id per row
+    exploded_behavior_df = behavior_df.select('impression_id', 'article_ids_inview', ).explode('article_ids_inview')
+
+    # Rename the exploded column for joining
+    exploded_behavior_df = exploded_behavior_df.rename({'article_ids_inview': 'article_id'})
+
+    # Perform a join to get the contrastive vectors for all article_ids
+    joined_df = exploded_behavior_df.join(contrast_emb_df, on='article_id', how='left')
+
+    # Group by impression_id and aggregate the contrastive vectors to create the mean vector for each impression_id
+    inviews_vectors_df = (
+        joined_df
+        .groupby('impression_id')
+        .agg(
+            pl.col('contrastive_vector').apply(lambda x: np.array(x).mean(axis=0).tolist()).alias(
+                'inview_vector_mean')
+        )
+    )
+
+    impression_ids = inviews_vectors_df['impression_id']
+    inviews_vectors = np.vstack(inviews_vectors_df['inview_vector_mean'].to_list())
+
+    return impression_ids, inviews_vectors
+
+
 def clean_dataframe(row):
     return (row[0], list(set([x for xs in row[1] for x in xs])))
+
 
 def exponential_decay(freshness, alpha=0.1):
     return np.exp(-alpha * freshness)

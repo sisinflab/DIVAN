@@ -92,7 +92,7 @@ DIN_default: # This is a config template
   net_dropout: 0
   batch_norm: False
   epochs: 100
-  shuffle: False
+  shuffle: True
   seed: 2019
   monitor: { 'AUC': 1, 'logloss': -1 }
   monitor_mode: 'max'
@@ -105,6 +105,7 @@ DIN_bpr: # This is a config template
   task: binary_classification
   optimizer: adam
   learning_rate: 1.0e-3
+  reduce_lr_on_plateau: False
   embedding_regularizer: 0
   net_regularizer: 0
   batch_size: 8192
@@ -121,13 +122,13 @@ DIN_bpr: # This is a config template
   net_dropout: 0
   batch_norm: False
   epochs: 100
-  shuffle: False
+  shuffle: True
   seed: 2019
   monitor: { 'AUC': 1, 'logloss': -1 }
   monitor_mode: 'max'
 
-PopDIN_default: # This is a config template
-  model: PopDIN
+VDIN_default: # This is a config template
+  model: VDIN
   dataset_id: TBD
   loss: 'binary_crossentropy' # 'bpr', 'binary_crossentropy'
   metrics: [ 'logloss', 'AUC' ]
@@ -150,7 +151,7 @@ PopDIN_default: # This is a config template
   net_dropout: 0
   batch_norm: False
   epochs: 100
-  shuffle: False
+  shuffle: True
   reduce_lr_on_plateau: False
   seed: 2019
   monitor: { 'AUC': 1, 'logloss': -1 }
@@ -172,7 +173,7 @@ Ensemble_default: # This is a config template
   net_dropout: 0
   batch_norm: False
   epochs: 100
-  shuffle: False
+  shuffle: True
   seed: 2019
   monitor: { 'AUC': 1, 'logloss': -1 }
   monitor_mode: 'max'

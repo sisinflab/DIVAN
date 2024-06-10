@@ -27,7 +27,8 @@ import gc
 from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history,
-                             sampling_strategy_wu2019, create_binary_labels_column, exponential_decay)
+                             sampling_strategy_wu2019, create_binary_labels_column, exponential_decay,
+                             create_inviews_vectors)
 from utils.sampling import create_test2
 import argparse
 
@@ -44,7 +45,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_folder', type=str, default='./data/', help='The folder in which data will be stored')
     parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
-    parser.add_argument('--embedding_size', type=int, default=64,
+    parser.add_argument('--embedding_size', type=int, default=256,
                         help='The embedding size you want to reduce the initial embeddings')
     parser.add_argument('--neg_sampling', action="store_true", help='Use this flag to perform negative sampling')
 
@@ -165,7 +166,7 @@ if __name__ == '__main__':
     R = get_enriched_user_history(behaviors, history)
     popularity_scores = compute_item_popularity_scores(R)
 
-    del behaviors, train_behaviors, valid_behaviors, history
+    del train_behaviors, valid_behaviors, history
     gc.collect()
 
     news = news.with_columns(
@@ -239,7 +240,6 @@ if __name__ == '__main__':
                     .collect()
                     .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
                           inview_col="article_ids_inview", with_replacement=True, seed=123)
-                    #            .pipe(add_soft_neg_samples, n_samples=5, news_df=train_news)
                     .with_columns(
                         pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(
                             pl.Int32).cast(
@@ -337,15 +337,15 @@ if __name__ == '__main__':
     print("Preprocess pretrained embeddings...")
     image_emb_path = dataset_path + '/image_embeddings.parquet'
     image_emb_df = pl.read_parquet(image_emb_path)
-    pca = PCA(n_components=args['embedding_size'])
+    pca = PCA(n_components=embedding_size)
     image_emb = pca.fit_transform(np.array(image_emb_df["image_embedding"].to_list()))
     print("image_embedding.shape", image_emb.shape)
     item_dict = {
         "key": image_emb_df["article_id"].cast(str),
         "value": image_emb
     }
-    print("Save image_emb_dim64.npz...")
-    np.savez(f"./{data_folder}/{dataset_version}/image_emb_dim64.npz", **item_dict)
+    print(f"Save image_emb_dim{embedding_size}.npz...")
+    np.savez(f"./{data_folder}/{dataset_version}/image_emb_dim{embedding_size}.npz", **item_dict)
 
     contrast_emb_path = dataset_path + '/contrastive_vector.parquet'
     contrast_emb_df = pl.read_parquet(contrast_emb_path)
@@ -355,7 +355,27 @@ if __name__ == '__main__':
         "key": contrast_emb_df["article_id"].cast(str),
         "value": contrast_emb
     }
-    print("Save contrast_emb_dim64.npz...")
-    np.savez(f"./data/{dataset_version}/contrast_emb_dim64.npz", **item_dict)
+    print(f"Save contrast_emb_dim{embedding_size}.npz...")
+    np.savez(f"./data/{dataset_version}/contrast_emb_dim{embedding_size}.npz", **item_dict)
+
+    print("Create a representation of the inviews")
+    if args['test']:
+        behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+        behavior_df_test = pl.scan_parquet(behavior_file_test)
+
+        behaviors = pl.concat([behaviors, behavior_df_test])
+        behaviors = behaviors.unique(subset=['impression_id'])
+        del behavior_df_test
+        gc.collect()
+
+    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, contrast_emb_df)
+    inviews_emb = pca.fit_transform(inviews_vectors)
+    print("inviews_emb.shape", inviews_emb.shape)
+    item_dict = {
+        "key": impr_ids.cast(str),
+        "value": inviews_emb
+    }
+    print(f"Save inviews_emb_dim{embedding_size}.npz...")
+    np.savez(f"./data/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
 
     print("All done.")

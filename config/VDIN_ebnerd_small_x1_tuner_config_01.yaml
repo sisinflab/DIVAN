@@ -1,14 +1,14 @@
 base_config: ./config/base_config/
-base_expid: DIN_default
+base_expid: VDIN_default
 dataset_id: ebnerd_small_x1
 
 dataset_config:
-  ebnerd_small_x1:
-    data_root: ./data/Ebnerd_small/
+  ebnerd_demo_x1:
+    data_root: ./data/
     data_format: csv
     train_data: ./data/Ebnerd_small_x1/train.csv
     valid_data: ./data/Ebnerd_small_x1/valid.csv
-    test_data: ./data/Ebnerd_small_x1/test2.csv
+    test_data: ./data/Ebnerd_small_x1/valid.csv
     min_categr_count: 10
     data_block_size: 100000
     streaming: True
@@ -34,8 +34,8 @@ dataset_config:
       #- {name: pageviews_inviews_ratio, active: False, dtype: float, type: numeric, fill_na: 0}
       #- {name: total_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
       - { name: sentiment_score, active: False, dtype: float, type: numeric, fill_na: 0 }
-      - { name: popularity_score, active: True, dtype: float, type: numeric, fill_na: 0 }
-      - { name: virality_score, active: True, dtype: float, type: numeric, fill_na: 0 }
+      #- { name: popularity_score, active: True, dtype: float, type: numeric, fill_na: 0 }
+      - { name: virality_score, active: True, dtype: float, type: meta, remap: False }
       - { name: freshness_decay, active: True, dtype: float, type: numeric, fill_na: 0 }
 
       #- {name: delta_scroll_percentage, active: False, dtype: float, type: numeric, fill_na: 0}
@@ -57,19 +57,19 @@ dataset_config:
       - { name: pulish_3day, active: True, dtype: str, type: categorical }
       - { name: pulish_7day, active: True, dtype: str, type: categorical }
       - { name: article_id_img, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_demo_x1/image_emb_dim64.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/image_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: article_id_text, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_demo_x1/contrast_emb_dim64.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/contrast_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: inview_emb, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(impression_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_demo_x1/inviews_emb_dim64.npz",
+          preprocess: "copy_from(impression_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/inviews_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: hist_id_img, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, freeze_emb: True,
-          preprocess: "copy_from(hist_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_demo_x1/image_emb_dim64.npz",
+          preprocess: "copy_from(hist_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/image_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1, share_embedding: article_id_img }
       - { name: hist_id_text, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, freeze_emb: True,
-          preprocess: "copy_from(hist_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_demo_x1/contrast_emb_dim64.npz",
+          preprocess: "copy_from(hist_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/contrast_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1, share_embedding: article_id_text }
     label_col: { name: click, dtype: float }
 
@@ -82,12 +82,12 @@ tuner_space:
     { name: hist_subcat1, feature_encoder: null },
     { name: hist_sentiment, feature_encoder: null },
     { name: hist_type, feature_encoder: null },
-    { name: hist_id_img, feature_encoder: "nn.Linear(64, 64, bias=False)" },
-    { name: hist_id_text, feature_encoder: [ "nn.Linear(64, 64, bias=False)" ] },
-    { name: article_id_img, feature_encoder: [ "nn.Linear(64, 64, bias=False)" ] },
-    { name: article_id_text, feature_encoder: [ "nn.Linear(64, 64, bias=False)" ] }
+    { name: hist_id_img, feature_encoder: "nn.Linear(256, 256, bias=False)" },
+    { name: hist_id_text, feature_encoder: [ "nn.Linear(256, 256, bias=False)" ] },
+    { name: article_id_img, feature_encoder: [ "nn.Linear(256, 256, bias=False)" ] },
+    { name: article_id_text, feature_encoder: [ "nn.Linear(256, 256, bias=False)" ] }
   ] ]
-  embedding_dim: 64
+  embedding_dim: 256
   dnn_hidden_units: [ [ 1024, 512, 256 ], [ 512, 256, 128 ], [ 256, 128 , 64 ], [ 128, 64, 32 ] ]
   attention_hidden_units: [ [ 512, 256 ], [ 256, 128 ], [ 128, 64 ], [ 64, 32 ] ]
   attention_hidden_activations: ReLU
@@ -102,9 +102,13 @@ tuner_space:
   net_regularizer: [ 1.e-3, 1.e-4 ]
   batch_norm: [ False, True ]
   learning_rate: [ 1.e-3, 1.e-4 ]
-  optimizer: [ adam, AdamW ]
+  optimizer: [ adam, SGD ]
+  loss: 'binary_crossentropy' # 'bpr', 'binary_crossentropy'
   batch_size: 15000
   seed: 20242025
+  epochs: 1000
+  early_stop_patience: 100
+  shuffle: True
   group_id: impression_id
   metrics: [ [ avgAUC, MRR, NDCG(k=5) ] ]
   monitor: avgAUC
