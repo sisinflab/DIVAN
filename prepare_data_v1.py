@@ -47,9 +47,9 @@ if __name__ == '__main__':
     parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
     parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
-    parser.add_argument('--embedding_size', type=int, default=256,
+    parser.add_argument('--embedding_size', type=int, default=64,
                         help='The embedding size you want to reduce the initial embeddings')
-    parser.add_argument('--embedding_type', type=str, default="contrastive",
+    parser.add_argument('--embedding_type', type=str, default="bert",
                         help='The embedding type you want to use')
     parser.add_argument('--neg_sampling', action="store_true", help='Use this flag to perform negative sampling')
 
@@ -85,12 +85,9 @@ if __name__ == '__main__':
         os.makedirs(dataset_path)
         print(f"Folder '{dataset_path}' has been created.")
         # now we will download the dataset here
-        if args['test']:
-            print("Downloading the test set")
-            download_ebnerd_dataset(dataset_size, dataset_path, dataset_path + '/train/', dataset_path + '/test/')
-        else:
-            print("Not Downloading the test set")
-            download_ebnerd_dataset(dataset_size, dataset_path, dataset_path + '/train/')
+        print("Downloading the data set")
+        download_ebnerd_dataset(dataset_size, dataset_path, dataset_path + '/train/', dataset_path + '/test/')
+
         if args['neg_sampling']:
             create_test2()
 
@@ -359,24 +356,24 @@ if __name__ == '__main__':
     print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
     np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
 
-    print("Create a representation of the inviews")
-    if args['test']:
-        behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-        behavior_df_test = pl.scan_parquet(behavior_file_test)
-
-        behaviors = pl.concat([behaviors, behavior_df_test])
-        behaviors = behaviors.unique(subset=['impression_id'])
-        del behavior_df_test
-        gc.collect()
-
-    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
-    inviews_emb = pca.fit_transform(inviews_vectors)
-    print("inviews_emb.shape", inviews_emb.shape)
-    item_dict = {
-        "key": impr_ids.cast(str),
-        "value": inviews_emb
-    }
-    print(f"Save inviews_emb_dim{embedding_size}.npz...")
-    np.savez(f"{data_folder}/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
+    # print("Create a representation of the inviews")
+    # if args['test']:
+    #     behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+    #     behavior_df_test = pl.scan_parquet(behavior_file_test)
+    #
+    #     behaviors = pl.concat([behaviors, behavior_df_test])
+    #     behaviors = behaviors.unique(subset=['impression_id'])
+    #     del behavior_df_test
+    #     gc.collect()
+    #
+    # impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
+    # inviews_emb = pca.fit_transform(inviews_vectors)
+    # print("inviews_emb.shape", inviews_emb.shape)
+    # item_dict = {
+    #     "key": impr_ids.cast(str),
+    #     "value": inviews_emb
+    # }
+    # print(f"Save inviews_emb_dim{embedding_size}.npz...")
+    # np.savez(f"{data_folder}/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
 
     print("All done.")

@@ -62,9 +62,9 @@ dataset_config:
       - { name: article_id_text, active: True, dtype: str, type: categorical, freeze_emb: True,
           preprocess: "copy_from(article_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/contrast_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1 }
-      - { name: inview_emb, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(impression_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/inviews_emb_dim256.npz",
-          pretrain_usage: "init", min_categr_count: 1 }
+#      - { name: inview_emb, active: True, dtype: str, type: categorical, freeze_emb: True,
+#          preprocess: "copy_from(impression_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/inviews_emb_dim256.npz",
+#          pretrain_usage: "init", min_categr_count: 1 }
       - { name: hist_id_img, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, freeze_emb: True,
           preprocess: "copy_from(hist_id)", pretrain_dim: 256, pretrained_emb: "./data/Ebnerd_small_x1/image_emb_dim256.npz",
           pretrain_usage: "init", min_categr_count: 1, share_embedding: article_id_img }

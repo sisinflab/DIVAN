@@ -1236,22 +1236,27 @@ def compute_item_popularity_scores(R: Iterable[np.array]) -> dict[str, float]:
     return {item: (r_ui / U) for item, r_ui in item_counts.items()}
 
 
-def create_inviews_vectors(behavior_df, contrast_emb_df):
+def create_inviews_vectors(behavior_df, emb_df):
     # Explode the article_ids_inview column to have one article_id per row
     exploded_behavior_df = behavior_df.select('impression_id', 'article_ids_inview', ).explode('article_ids_inview')
 
+    del behavior_df
+    gc.collect()
     # Rename the exploded column for joining
     exploded_behavior_df = exploded_behavior_df.rename({'article_ids_inview': 'article_id'})
 
     # Perform a join to get the contrastive vectors for all article_ids
-    joined_df = exploded_behavior_df.join(contrast_emb_df, on='article_id', how='left')
+    joined_df = exploded_behavior_df.join(emb_df, on='article_id', how='left')
 
-    # Group by impression_id and aggregate the contrastive vectors to create the mean vector for each impression_id
+    del exploded_behavior_df
+    gc.collect()
+
+    # Group by impression_id and aggregate the vectors to create the mean vector for each impression_id
     inviews_vectors_df = (
         joined_df
         .groupby('impression_id')
         .agg(
-            pl.col('contrastive_vector').apply(lambda x: np.array(x).mean(axis=0).tolist()).alias(
+            pl.col(emb_df.columns[-1]).apply(lambda x: np.array(x).mean(axis=0).tolist()).alias(
                 'inview_vector_mean')
         )
     )
