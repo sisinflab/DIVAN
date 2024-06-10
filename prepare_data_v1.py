@@ -38,23 +38,28 @@ warnings.filterwarnings("ignore")
 
 if __name__ == '__main__':
     ''' 
-    Usage: python prepare_data_v1.py --size {dataset_size} --data_folder {data_path} [--test] --embedding_size [64|128|256]
+    Usage: 
+    python prepare_data_v1.py --size {dataset_size} --data_folder {data_path} [--test] 
+                                --embedding_size [64|128|256] --embedding_type [contrastive|bert|roberta]
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--size', type=str, default='demo', help='The size of the dataset to download')
-    parser.add_argument('--data_folder', type=str, default='./data/', help='The folder in which data will be stored')
+    parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
+    parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
     parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
     parser.add_argument('--embedding_size', type=int, default=256,
                         help='The embedding size you want to reduce the initial embeddings')
+    parser.add_argument('--embedding_type', type=str, default="contrastive",
+                        help='The embedding type you want to use')
     parser.add_argument('--neg_sampling', action="store_true", help='Use this flag to perform negative sampling')
 
     args = vars(parser.parse_args())
     dataset_size = args['size']
     data_folder = args['data_folder']
     embedding_size = args['embedding_size']
+    embedding_type = args['embedding_type']
     tag = args['tag']
-    dataset_version = f"Ebnerd_{dataset_size}_{tag}"
+    dataset_version = f"Ebnerd_{dataset_size}_{embedding_type}{embedding_size}_{tag}"
     # insert a check, if data aren't in the repository, download them
     dataset_path = os.path.join(data_folder, 'Ebnerd_' + dataset_size)
     # Check if 'Ebnerd_{dataset_size}' folder exists
@@ -138,8 +143,7 @@ if __name__ == '__main__':
     valid_history = pl.scan_parquet(valid_history_file).select(['user_id', 'article_id_fixed'])
     if args['test']:
         test_history_file = os.path.join(test_path, "history.parquet")
-        test_history = pl.scan_parquet(test_history_file).select(['user_id', 'article_id_fixed']).collect()
-        test_history = test_history.with_columns(pl.col('user_id').cast(pl.Int64))
+        test_history = pl.scan_parquet(test_history_file).select(['user_id', 'article_id_fixed'])
 
         history = pl.concat([train_history, valid_history, test_history])
         del train_history, valid_history, test_history
@@ -223,54 +227,51 @@ if __name__ == '__main__':
                 pl.lit(None).alias("trigger_id"),
                 pl.lit(0).alias("click")
             )
-        if args['neg_sampling']:
-            print("Performing negative sampling...")
-            if "test2" in data_path:
+        else:
+            if args['neg_sampling']:
+                print("Performing negative sampling...")
+                if "test2" in data_path:
+                    sample_df = (
+                        sample_df.rename({"article_id": "trigger_id"})
+                        .rename({"article_ids_inview": "article_id"})
+                        .explode('article_id')
+                        .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
+                        .drop(["article_ids_clicked"])
+                        .collect()
+                    )
+                else:
+                    sample_df = (
+                        sample_df.rename({"article_id": "trigger_id"})
+                        .collect()
+                        .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
+                              inview_col="article_ids_inview", with_replacement=True, seed=123)
+                        .with_columns(
+                            pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(
+                                pl.Int32).cast(
+                                pl.String))
+                        .with_columns(pl.col("impression_id").cast(pl.Int64))
+                        .pipe(create_binary_labels_column, clicked_col="article_ids_clicked",
+                              inview_col="article_ids_inview")
+                        .drop("labels")
+                        .rename({"article_ids_inview": "article_id"})
+                        .explode("article_id")
+                        .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
+                        .drop("article_ids_clicked")
+                        .with_columns(pl.col("article_id").cast(pl.Int32))
+                    )
+
+            else:
                 sample_df = (
                     sample_df.rename({"article_id": "trigger_id"})
                     .rename({"article_ids_inview": "article_id"})
                     .explode('article_id')
                     .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
                     .drop(["article_ids_clicked"])
-                    .collect()
                 )
-            else:
-                sample_df = (
-                    sample_df.rename({"article_id": "trigger_id"})
-                    .collect()
-                    .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
-                          inview_col="article_ids_inview", with_replacement=True, seed=123)
-                    .with_columns(
-                        pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(
-                            pl.Int32).cast(
-                            pl.String))
-                    .with_columns(pl.col("impression_id").cast(pl.Int64))
-                    .pipe(create_binary_labels_column, clicked_col="article_ids_clicked",
-                          inview_col="article_ids_inview")
-                    .drop("labels")
-                    .rename({"article_ids_inview": "article_id"})
-                    .explode("article_id")
-                    .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-                    .drop("article_ids_clicked")
-                    .with_columns(pl.col("article_id").cast(pl.Int32))
-                )
-            sample_df = (
-                sample_df
-                .join(news, on='article_id', how="left")
-                .join(history_df, on='user_id', how="left")
-            )
-        else:
-            sample_df = (
-                sample_df.rename({"article_id": "trigger_id"})
-                .rename({"article_ids_inview": "article_id"})
-                .explode('article_id')
-                .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-                .drop(["article_ids_clicked"])
-            )
-            sample_df = (
-                sample_df.collect()
-                .join(news, on='article_id', how="left")
-                .join(history_df, on='user_id', how="left"))
+        sample_df = (
+            sample_df.collect()
+            .join(news, on='article_id', how="left")
+            .join(history_df, on='user_id', how="left"))
 
         sample_df = (
             sample_df
@@ -299,22 +300,22 @@ if __name__ == '__main__':
         return sample_df
 
 
-    if os.path.isdir(f"./{data_folder}/{dataset_version}"):
-        print(f"Folder './{data_folder}/{dataset_version}' exists.")
+    if os.path.isdir(f"{data_folder}/{dataset_version}"):
+        print(f"Folder '{data_folder}/{dataset_version}' exists.")
     else:
-        os.makedirs(f"./{data_folder}/{dataset_version}")
-        print(f"Folder './{data_folder}/{dataset_version}' has been created.")
+        os.makedirs(f"{data_folder}/{dataset_version}")
+        print(f"Folder '{data_folder}/{dataset_version}' has been created.")
 
     train_df = join_data(train_path)
     print(train_df.head())
     print("Train samples", train_df.shape)
-    train_df.write_csv(f"./{data_folder}/{dataset_version}/train.csv")
+    train_df.write_csv(f"{data_folder}/{dataset_version}/train.csv")
     del train_df
 
     valid_df = join_data(dev_path)
     print(valid_df.head())
     print("Validation samples", valid_df.shape)
-    valid_df.write_csv(f"./{data_folder}/{dataset_version}/valid.csv")
+    valid_df.write_csv(f"{data_folder}/{dataset_version}/valid.csv")
     del valid_df
     gc.collect()
 
@@ -322,7 +323,7 @@ if __name__ == '__main__':
         test2_df = join_data(test2_path)
         print(test2_df.head())
         print("Test samples", test2_df.shape)
-        test2_df.write_csv(f"./{data_folder}/{dataset_version}/test2.csv")
+        test2_df.write_csv(f"{data_folder}/{dataset_version}/test2.csv")
         del test2_df
         gc.collect()
 
@@ -330,7 +331,7 @@ if __name__ == '__main__':
         test_df = join_data(test_path)
         print(test_df.head())
         print("Test samples", test_df.shape)
-        test_df.write_csv(f"./{data_folder}/{dataset_version}/test.csv")
+        test_df.write_csv(f"{data_folder}/{dataset_version}/test.csv")
         del test_df
         gc.collect()
 
@@ -345,18 +346,18 @@ if __name__ == '__main__':
         "value": image_emb
     }
     print(f"Save image_emb_dim{embedding_size}.npz...")
-    np.savez(f"./{data_folder}/{dataset_version}/image_emb_dim{embedding_size}.npz", **item_dict)
+    np.savez(f"{data_folder}/{dataset_version}/image_emb_dim{embedding_size}.npz", **item_dict)
 
-    contrast_emb_path = dataset_path + '/contrastive_vector.parquet'
-    contrast_emb_df = pl.read_parquet(contrast_emb_path)
-    contrast_emb = pca.fit_transform(np.array(contrast_emb_df["contrastive_vector"].to_list()))
-    print("contrast_emb.shape", contrast_emb.shape)
+    emb_path = dataset_path + f'/{embedding_type}_vector.parquet'
+    emb_df = pl.read_parquet(emb_path)
+    emb = pca.fit_transform(np.array(emb_df[emb_df.columns[-1]].to_list()))
+    print(f"{embedding_type}_emb.shape", emb.shape)
     item_dict = {
-        "key": contrast_emb_df["article_id"].cast(str),
-        "value": contrast_emb
+        "key": emb_df["article_id"].cast(str),
+        "value": emb
     }
-    print(f"Save contrast_emb_dim{embedding_size}.npz...")
-    np.savez(f"./data/{dataset_version}/contrast_emb_dim{embedding_size}.npz", **item_dict)
+    print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
+    np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
 
     print("Create a representation of the inviews")
     if args['test']:
@@ -368,7 +369,7 @@ if __name__ == '__main__':
         del behavior_df_test
         gc.collect()
 
-    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, contrast_emb_df)
+    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
     inviews_emb = pca.fit_transform(inviews_vectors)
     print("inviews_emb.shape", inviews_emb.shape)
     item_dict = {
@@ -376,6 +377,6 @@ if __name__ == '__main__':
         "value": inviews_emb
     }
     print(f"Save inviews_emb_dim{embedding_size}.npz...")
-    np.savez(f"./data/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
+    np.savez(f"{data_folder}/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
 
     print("All done.")
