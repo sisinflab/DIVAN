@@ -28,7 +28,7 @@ from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
                              compute_item_popularity_scores, get_enriched_user_history,
                              sampling_strategy_wu2019, create_binary_labels_column, exponential_decay,
-                             create_inviews_vectors)
+                             create_inviews_vectors, compute_near_realtime_ctr)
 from utils.sampling import create_test2
 import argparse
 
@@ -43,13 +43,13 @@ if __name__ == '__main__':
                                 --embedding_size [64|128|256] --embedding_type [contrastive|bert|roberta]
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
+    parser.add_argument('--size', type=str, default='demo', help='The size of the dataset to download')
     parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
     parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
     parser.add_argument('--embedding_size', type=int, default=64,
                         help='The embedding size you want to reduce the initial embeddings')
-    parser.add_argument('--embedding_type', type=str, default="bert",
+    parser.add_argument('--embedding_type', type=str, default="contrastive",
                         help='The embedding type you want to use')
     parser.add_argument('--neg_sampling', action="store_true", help='Use this flag to perform negative sampling')
 
@@ -133,6 +133,17 @@ if __name__ == '__main__':
     news2sentiment = dict(zip(news["article_id"].cast(str), news["sentiment_label"]))
     news2type = dict(zip(news["article_id"].cast(str), news["article_type"]))
 
+    news = (
+        news
+        .with_columns(topic1=pl.col('topics').apply(lambda x: str(x.split("^")[0]) if len(x.split("^")) > 0 else ""))
+        .with_columns(topic2=pl.col('topics').apply(lambda x: str(x.split("^")[1]) if len(x.split("^")) > 1 else ""))
+        .with_columns(topic3=pl.col('topics').apply(lambda x: str(x.split("^")[2]) if len(x.split("^")) > 2 else ""))
+    )
+    news2topic1 = dict(zip(news["article_id"].cast(str), news["topic1"].cast(str)))
+    news2topic2 = dict(zip(news["article_id"].cast(str), news["topic2"].cast(str)))
+    news2topic3 = dict(zip(news["article_id"].cast(str), news["topic3"].cast(str)))
+
+
     print("Compute news popularity...")
     train_history_file = os.path.join(train_path, "history.parquet")
     valid_history_file = os.path.join(dev_path, "history.parquet")
@@ -166,17 +177,23 @@ if __name__ == '__main__':
 
     R = get_enriched_user_history(behaviors, history)
     popularity_scores = compute_item_popularity_scores(R)
+    near_realtime_ctr = compute_near_realtime_ctr(behaviors)
 
     del train_behaviors, valid_behaviors, history
     gc.collect()
 
     news = news.with_columns(
-        pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0.0)).alias("popularity_score")
+        pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0.0)).alias("popularity_score"),
+        pl.col("article_id").apply(lambda x: near_realtime_ctr.get(x, 0.0)).alias("near_realtime_ctr")
+
     )
+
+    news2pop = dict(zip(news["article_id"].cast(str), news["popularity_score"].cast(str)))
+
     print(news.head())
     print("Save news info...")
-    os.makedirs(f"{dataset_path}/{dataset_version}", exist_ok=True)
-    with open(f"{dataset_path}/{dataset_version}/news_info.jsonl", "w") as f:
+    os.makedirs(f"{data_folder}/{dataset_version}/", exist_ok=True)
+    with open(f"{data_folder}/{dataset_version}//news_info.jsonl", "w") as f:
         f.write(news.write_json(row_oriented=True, pretty=True))
 
     print("Preprocess behavior data...")
@@ -206,10 +223,18 @@ if __name__ == '__main__':
             pl.col("hist_id").apply(lambda x: "^".join([news2cat.get(i, "") for i in x.split("^")])).alias("hist_cat"),
             pl.col("hist_id").apply(lambda x: "^".join([news2subcat.get(i, "") for i in x.split("^")])).alias(
                 "hist_subcat1"),
+            pl.col("hist_id").apply(lambda x: "^".join([news2topic1.get(i, "") for i in x.split("^")])).alias(
+                "hist_topic1"),
+            pl.col("hist_id").apply(lambda x: "^".join([news2topic2.get(i, "") for i in x.split("^")])).alias(
+                "hist_topic2"),
+            pl.col("hist_id").apply(lambda x: "^".join([news2topic3.get(i, "") for i in x.split("^")])).alias(
+                "hist_topic3"),
             pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
                 "hist_sentiment"),
             pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias(
                 "hist_type"),
+            pl.col('hist_id').apply(lambda x: "^".join([news2pop.get(i, "0") for i in x.split("^")])).alias(
+                "hist_pop")
         )
         history_df = history_df.collect()
         behavior_file = os.path.join(data_path, "behaviors.parquet")
@@ -264,9 +289,10 @@ if __name__ == '__main__':
                     .explode('article_id')
                     .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
                     .drop(["article_ids_clicked"])
+                    .collect()
                 )
         sample_df = (
-            sample_df.collect()
+            sample_df
             .join(news, on='article_id', how="left")
             .join(history_df, on='user_id', how="left"))
 
@@ -356,24 +382,24 @@ if __name__ == '__main__':
     print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
     np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
 
-    # print("Create a representation of the inviews")
-    # if args['test']:
-    #     behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-    #     behavior_df_test = pl.scan_parquet(behavior_file_test)
-    #
-    #     behaviors = pl.concat([behaviors, behavior_df_test])
-    #     behaviors = behaviors.unique(subset=['impression_id'])
-    #     del behavior_df_test
-    #     gc.collect()
-    #
-    # impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
-    # inviews_emb = pca.fit_transform(inviews_vectors)
-    # print("inviews_emb.shape", inviews_emb.shape)
-    # item_dict = {
-    #     "key": impr_ids.cast(str),
-    #     "value": inviews_emb
-    # }
-    # print(f"Save inviews_emb_dim{embedding_size}.npz...")
-    # np.savez(f"{data_folder}/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
+    print("Create a representation of the inviews")
+    if args['test']:
+        behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+        behavior_df_test = pl.scan_parquet(behavior_file_test)
+
+        behaviors = pl.concat([behaviors, behavior_df_test])
+        behaviors = behaviors.unique(subset=['impression_id'])
+        del behavior_df_test
+        gc.collect()
+
+    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
+    inviews_emb = pca.fit_transform(inviews_vectors)
+    print("inviews_emb.shape", inviews_emb.shape)
+    item_dict = {
+        "key": impr_ids.cast(str),
+        "value": inviews_emb
+    }
+    print(f"Save inviews_emb_dim{embedding_size}.npz...")
+    np.savez(f"{data_folder}/{dataset_version}/inviews_emb_dim{embedding_size}.npz", **item_dict)
 
     print("All done.")

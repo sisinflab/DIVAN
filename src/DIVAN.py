@@ -1,39 +1,23 @@
-# =========================================================================
-# Copyright (C) 2024. FuxiCTR Authors. All rights reserved.
-# Copyright (C) 2022. Huawei Technologies Co., Ltd. All rights reserved.
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# =========================================================================
-import os
 import numpy as np
 import torch
 from torch import nn
 from pandas.core.common import flatten
 from fuxictr.pytorch.models import BaseModel
 from fuxictr.pytorch.layers import FeatureEmbeddingDict, MLP_Block, DIN_Attention, Dice
+from src.PopNet import PopNet
+from src.Gate import Gate
 from utils.bpr_pytorch import BPRLoss
 from fuxictr.pytorch.torch_utils import get_optimizer, get_loss
 import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
 
 
-class DIN(BaseModel):
+class DIVAN(BaseModel):
     def __init__(self,
                  feature_map,
-                 model_id="DIN",
+                 model_id="DIVAN",
                  gpu=-1,
                  dnn_hidden_units=[512, 128, 64],
                  dnn_activations="ReLU",
@@ -47,22 +31,32 @@ class DIN(BaseModel):
                  batch_norm=False,
                  din_target_field=[("item_id", "cate_id")],
                  din_sequence_field=[("click_history", "cate_history")],
+                 recency_field=[("publish_hours")],
                  din_use_softmax=False,
                  embedding_regularizer=None,
                  net_regularizer=None,
+                 gate_hidden_units=[100],
+                 gate_dropout=0,
+                 network_recency_hidden_dims=[100],
+                 network_recency_dropout_rate=0,
+                 network_content_hidden_dims=[100],
+                 network_content_dropout_rate=0,
                  **kwargs):
-        super(DIN, self).__init__(feature_map,
-                                  model_id=model_id,
-                                  gpu=gpu,
-                                  embedding_regularizer=embedding_regularizer,
-                                  net_regularizer=net_regularizer,
-                                  **kwargs)
+        super(DIVAN, self).__init__(feature_map,
+                                    model_id=model_id,
+                                    gpu=gpu,
+                                    embedding_regularizer=embedding_regularizer,
+                                    net_regularizer=net_regularizer,
+                                    **kwargs)
         if not isinstance(din_target_field, list):
             din_target_field = [din_target_field]
         self.din_target_field = din_target_field
         if not isinstance(din_sequence_field, list):
             din_sequence_field = [din_sequence_field]
         self.din_sequence_field = din_sequence_field
+        if not isinstance(recency_field, list):
+            recency_field = [recency_field]
+        self.recency_field = recency_field
         assert len(self.din_target_field) == len(self.din_sequence_field), \
             "len(din_target_field) != len(din_sequence_field)"
         if isinstance(dnn_activations, str) and dnn_activations.lower() == "dice":
@@ -79,6 +73,13 @@ class DIN(BaseModel):
                            dropout_rate=attention_dropout,
                            use_softmax=din_use_softmax)
              for target_field in self.din_target_field])
+
+        self.gate = Gate(
+            input_dim=embedding_dim * len([i for el in self.din_sequence_field for i in el]),
+            hidden_dims=gate_hidden_units,
+            dropout_rate=gate_dropout
+        )
+
         self.dnn = MLP_Block(input_dim=feature_map.sum_emb_out_dim(),
                              output_dim=1,
                              hidden_units=dnn_hidden_units,
@@ -86,12 +87,21 @@ class DIN(BaseModel):
                              output_activation=self.output_activation,
                              dropout_rates=net_dropout,
                              batch_norm=batch_norm)
+
+        self.popnet = PopNet(
+            network_recency_input_dim=embedding_dim * len([i for el in self.recency_field for i in el]),
+            network_recency_hidden_dims=network_recency_hidden_dims,
+            network_recency_dropout_rate=network_recency_dropout_rate,
+            network_content_input_dim=embedding_dim * len([i for el in self.din_target_field for i in el]),
+            network_content_hidden_dims=network_content_hidden_dims,
+            network_content_dropout_rate=network_content_dropout_rate,
+            gate_hidden_units=gate_hidden_units,
+            gate_dropout=gate_dropout)
+
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
-        self.checkpoint = os.path.abspath(
-            os.path.join(self.model_dir, self.model_id + datetime.now().strftime("%b%d_%H-%M-%S") + ".model"))
 
     def forward(self, inputs):
         X = self.get_inputs(inputs)
@@ -108,13 +118,36 @@ class DIN(BaseModel):
                                         pooling_emb.split(self.embedding_dim, dim=-1)):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
-        y_pred = self.dnn(feature_emb)
+
+        # Get user-specific alpha
+        user_emb = self.embedding_layer.dict2tensor(
+            {i: feature_emb_dict[i] for el in self.din_sequence_field for i in el}, flatten_emb=True)
+        alpha = self.gate(user_emb)
+
+        # predict news popularity
+        news_recency_emb = self.embedding_layer.dict2tensor(
+            {i: feature_emb_dict[i] for el in self.recency_field for i in el}, flatten_emb=True)
+        news_content_emb = self.embedding_layer.dict2tensor(
+            {i: feature_emb_dict[i] for el in self.din_target_field for i in el}, flatten_emb=True)
+        y_pred_pop = self.popnet(news_recency_emb, news_content_emb)
+
+        # predict din scores
+        y_pred_din = self.dnn(feature_emb)
+
+        # Combine the two prediction scores with user-specific parameters
+        y_pred = alpha * y_pred_din + (1 - alpha) * y_pred_pop
+
         if self._total_steps % self._eval_steps == 0:
             return_dict = {"y_pred": y_pred.float(),
-                           "positive_y_pred_din": y_pred[labels == 1].mean(),
-                           "negative_y_pred_din": y_pred[labels == 0].mean()}
+                           "positive_y_pred": y_pred[labels == 1].mean(),
+                           "negative_y_pred": y_pred[labels == 0].mean(),
+                           "positive_y_pred_din": y_pred_din[labels == 1].mean(),
+                           "negative_y_pred_din": y_pred_din[labels == 0].mean(),
+                           "positive_y_pred_pop": y_pred_pop[labels == 1].mean(),
+                           "negative_y_pred_pop": y_pred_pop[labels == 0].mean(),
+                           "alpha": alpha.mean()}
         else:
-            return_dict = {"y_pred": y_pred.float()}
+            return_dict = {"y_pred": self.output_activation(y_pred).float()}
         return return_dict
 
     def train_step(self, batch_data):
@@ -133,6 +166,43 @@ class DIN(BaseModel):
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
         self.optimizer.step()
         return loss, return_dict
+
+    def train_epoch(self, data_generator):
+        self._batch_index = 0
+        train_loss = 0
+
+        self.train()
+        if self._verbose == 0:
+            batch_iterator = data_generator
+        else:
+            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
+        for batch_index, batch_data in enumerate(batch_iterator):
+            self._batch_index = batch_index
+            self._total_steps += 1
+            loss, return_dict = self.train_step(batch_data)
+
+            train_loss += loss.item()
+
+            if self._total_steps % self._eval_steps == 0:
+                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
+                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
+                self.writer.add_scalars("mean_comb_scores", {
+                    "mean_positive_comb_scores": return_dict['positive_y_pred'].mean() / self._eval_steps,
+                    "mean_negative_comb_scores": return_dict['negative_y_pred'] / self._eval_steps
+                }, self._epoch_index)
+                self.writer.add_scalars("mean_din_scores", {
+                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
+                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
+                }, self._epoch_index)
+                self.writer.add_scalars("mean_virality_scores", {
+                    "mean_positive_pop_scores": return_dict['positive_y_pred_pop'] / self._eval_steps,
+                    "mean_negative_pop_scores": return_dict['negative_y_pred_pop'] / self._eval_steps
+                }, self._epoch_index)
+                self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
+                train_loss = 0
+                self.eval_step()
+            if self._stop_training:
+                break
 
     def fit(self, data_generator, epochs=1, validation_data=None,
             max_gradient_norm=10., **kwargs):
@@ -162,31 +232,6 @@ class DIN(BaseModel):
         logging.info("Load best model: {}".format(self.checkpoint))
         self.writer.close()
         self.load_weights(self.checkpoint)
-
-    def train_epoch(self, data_generator):
-        self._batch_index = 0
-        train_loss = 0
-        self.train()
-        if self._verbose == 0:
-            batch_iterator = data_generator
-        else:
-            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
-        for batch_index, batch_data in enumerate(batch_iterator):
-            self._batch_index = batch_index
-            self._total_steps += 1
-            loss, return_dict = self.train_step(batch_data)
-            train_loss += loss.item()
-            if self._total_steps % self._eval_steps == 0:
-                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
-                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
-                self.writer.add_scalars("mean_din_scores", {
-                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
-                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
-                }, self._epoch_index)
-                train_loss = 0
-                self.eval_step()
-            if self._stop_training:
-                break
 
     def eval_step(self):
         logging.info('Evaluation @epoch {} - batch {}: '.format(self._epoch_index + 1, self._batch_index + 1))
