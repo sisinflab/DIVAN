@@ -9,8 +9,8 @@ from typing import Iterable
 import numpy as np
 from pandas.core.common import flatten
 import polars as pl
-import os
 import gc
+from datetime import timedelta
 
 from utils.polars_utils import (
     _check_columns_in_df,
@@ -1173,8 +1173,42 @@ def encode_date_list(lst):
     return [x.timestamp() for x in lst]
 
 
-def get_enriched_user_history(behavior_df: pl.DataFrame, history_df: pl.DataFrame) -> list[np.array]:
+def compute_near_realtime_ctr(behavior_df: pl.DataFrame, last_n_days=2) -> dict[str, float]:
+    """Compute near realtime ctr for items based on their occurrence in user interactions of the last n days.
+
+        This function calculates the near realtime ctr of each item as the fraction of users who have interacted with that item.
+        The popularity score, p_i, for an item is defined as the number of interactions item received in the last n days divided by the
+        total number of interactions in the last n days.
+
+        Note:
+            Each entry can only have the same item ones.
+
+        Args:
+            R (Iterable[np.ndarray]): An iterable of numpy arrays, where each array represents the items interacted with by a single user.
+                Each element in the array should be a string identifier for an item.
+
+        Returns:
+            dict[str, float]: A dictionary where keys are item identifiers and values are their corresponding near realtime ctr (as floats).
+    """
     # Collect necessary columns from the DataFrames
+    impression_time_threshold = list(behavior_df['impression_time'].sort(descending=True))[0].date() - timedelta(
+        days=last_n_days - 1)
+    behavior_df = behavior_df.filter(pl.col('impression_time') >= impression_time_threshold).select(
+        ['user_id', 'article_ids_clicked'])
+    # Explode the lists to have one article ID per row
+    behavior_df = behavior_df.explode('article_ids_clicked')
+    # Group by user_id and aggregate the article IDs into a list
+    behavior_df = behavior_df.groupby('user_id').agg(pl.col('article_ids_clicked'))
+    # Convert to list of np.array
+    last_n_days_clicked_list = [np.unique(np.array(ids)) for ids in behavior_df['article_ids_clicked'].to_list()]
+
+    R_flatten = np.concatenate(last_n_days_clicked_list)
+    item_counts = Counter(R_flatten)
+    return {item: (r_ui / len(R_flatten)) for item, r_ui in item_counts.items()}
+
+
+def get_enriched_user_history(behavior_df: pl.DataFrame, history_df: pl.DataFrame) -> list[
+    np.array]:
     behavior_df = behavior_df.select(['user_id', 'article_ids_clicked'])
     history_df = history_df.select(['user_id', 'article_id_fixed'])
 
@@ -1193,12 +1227,12 @@ def get_enriched_user_history(behavior_df: pl.DataFrame, history_df: pl.DataFram
     enriched_history = combined_df.groupby('user_id').agg(pl.col('article_id').alias('article_ids'))
 
     # Convert to list of np.array
-    enriched_history_list = [np.array(ids) for ids in enriched_history['article_ids'].to_list()]
+    enriched_history_list = [np.unique(np.array(ids)) for ids in enriched_history['article_ids'].to_list()]
 
     return enriched_history_list
 
 
-def compute_item_popularity_scores(R: Iterable[np.array]) -> dict[str, float]:
+def compute_item_popularity_scores(R: Iterable[np.ndarray]) -> dict[str, float]:
     """Compute popularity scores for items based on their occurrence in user interactions.
 
     This function calculates the popularity score of each item as the fraction of users who have interacted with that item.
