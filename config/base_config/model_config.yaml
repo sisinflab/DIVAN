@@ -198,7 +198,7 @@ Ensemble_default: # This is a config template
   loss: 'binary_crossentropy' # 'bpr', 'binary_crossentropy'
   metrics: [ 'logloss', 'AUC' ]
   task: binary_classification
-  models: []
+  models: [ ]
   optimizer: adam
   learning_rate: 1.0e-3
   embedding_regularizer: 0
@@ -209,6 +209,29 @@ Ensemble_default: # This is a config template
   batch_norm: False
   epochs: 100
   shuffle: True
+  seed: 2019
+  monitor: { 'AUC': 1, 'logloss': -1 }
+  monitor_mode: 'max'
+
+PopPredictor_default:
+  model: PopPredictor
+  dataset_id: TBD
+  loss: 'binary_crossentropy' # 'bpr', 'binary_crossentropy'
+  metrics: [ 'logloss', 'AUC' ]
+  task: binary_classification
+  models: [ ]
+  optimizer: adam
+  learning_rate: 1.0e-3
+  embedding_regularizer: 0
+  net_regularizer: 0
+  batch_size: 8192
+  embedding_dim: 40
+  net_dropout: 0
+  batch_norm: False
+  epochs: 100
+  shuffle: True
+  dnn_hidden_units: [ 500, 500, 500 ]
+  dnn_activations: relu
   seed: 2019
   monitor: { 'AUC': 1, 'logloss': -1 }
   monitor_mode: 'max'
