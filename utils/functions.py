@@ -1294,6 +1294,8 @@ def create_inviews_vectors(behavior_df, emb_df):
                 'inview_vector_mean')
         )
     )
+    del joined_df
+    gc.collect()
 
     impression_ids = inviews_vectors_df['impression_id']
     inviews_vectors = np.vstack(inviews_vectors_df['inview_vector_mean'].to_list())

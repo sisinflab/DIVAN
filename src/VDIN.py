@@ -13,6 +13,7 @@ from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+from src.Gate import Gate
 
 
 class VDIN(BaseModel):
@@ -35,6 +36,8 @@ class VDIN(BaseModel):
                  din_use_softmax=False,
                  embedding_regularizer=None,
                  net_regularizer=None,
+                 gate_hidden_units=[100],
+                 gate_dropout=0,
                  **kwargs):
         super(VDIN, self).__init__(feature_map,
                                    model_id=model_id,
@@ -67,10 +70,15 @@ class VDIN(BaseModel):
         self.dnn = MLP_Block(input_dim=feature_map.sum_emb_out_dim(),
                              output_dim=1,
                              hidden_units=dnn_hidden_units,
-                             #output_activation=self.output_activation,
+                             # output_activation=self.output_activation,
                              hidden_activations=dnn_activations,
                              dropout_rates=net_dropout,
                              batch_norm=batch_norm)
+        self.gate = Gate(
+            input_dim=embedding_dim * len([i for el in self.din_sequence_field for i in el]),
+            hidden_dims=gate_hidden_units,
+            dropout_rate=gate_dropout
+        )
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
         self.reset_parameters()
         self.model_to_device()
@@ -84,10 +92,9 @@ class VDIN(BaseModel):
     def forward(self, inputs):
         X = self.get_inputs(inputs)
         labels = self.get_labels(inputs)
-        self.virality_scores = self.get_virality_score(inputs).unsqueeze(1)
+        self.pv = self.get_virality_score(inputs).unsqueeze(1)  # prob based on virality
         eps = 1e-45
-        y_pred_viral = - torch.log(
-            (1 - self.virality_scores + eps) / (self.virality_scores + eps))  # get the virality scores
+        y_pred_viral = - torch.log((1 - self.pv + eps) / (self.pv + eps)).to(self.device)  # get the virality scores
         feature_emb_dict = self.embedding_layer(X)
         for idx, (target_field, sequence_field) in enumerate(zip(self.din_target_field,
                                                                  self.din_sequence_field)):
@@ -100,19 +107,26 @@ class VDIN(BaseModel):
                                         pooling_emb.split(self.embedding_dim, dim=-1)):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
-        y_pred_din = self.dnn(feature_emb)
+        y_pred_din = self.dnn(feature_emb)  # din score (not activated by sigmoid)
+
+        # Get user-specific alpha
+        user_emb = self.embedding_layer.dict2tensor(
+            {i: feature_emb_dict[i] for el in self.din_sequence_field for i in el}, flatten_emb=True)
+        alpha = self.gate(user_emb)
 
         # Combine the two prediction scores
-        y_pred = self.output_activation(y_pred_din + y_pred_viral)
+        y_pred_logits = alpha * y_pred_din + (1 - alpha) * y_pred_viral
+        y_pred = self.output_activation(y_pred_logits)
 
         if self._total_steps % self._eval_steps == 0:
             return_dict = {"y_pred": y_pred.float(),
-                           "positive_y_pred": y_pred[labels == 1].mean(),
-                           "negative_y_pred": y_pred[labels == 0].mean(),
+                           "positive_y_pred": y_pred_logits[labels == 1].mean(),
+                           "negative_y_pred": y_pred_logits[labels == 0].mean(),
                            "positive_y_pred_din": y_pred_din[labels == 1].mean(),
                            "negative_y_pred_din": y_pred_din[labels == 0].mean(),
                            "positive_y_pred_viral": y_pred_viral[labels == 1].mean(),
-                           "negative_y_pred_viral": y_pred_viral[labels == 0].mean()}
+                           "negative_y_pred_viral": y_pred_viral[labels == 0].mean(),
+                           "alpha": alpha.mean()}
         else:
             return_dict = {"y_pred": y_pred.float()}
         return return_dict
@@ -166,6 +180,7 @@ class VDIN(BaseModel):
                     "mean_positive_virality_scores": return_dict['positive_y_pred_viral'] / self._eval_steps,
                     "mean_negative_virality_scores": return_dict['negative_y_pred_viral'] / self._eval_steps
                 }, self._epoch_index)
+                self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
                 train_loss = 0
                 self.eval_step()
             if self._stop_training:
@@ -302,11 +317,4 @@ class VDIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             return val_logs
-
-    # def compute_loss(self, return_dict, y_true):
-    #     loss = self.loss_fn(return_dict["y_pred"], y_true, reduction='mean')
-    #     debiasing_loss = torch.mean(torch.abs(return_dict["y_pred"] - self.virality_scores))
-    #     margin_loss = -(
-    #         F.logsigmoid(return_dict["y_pred"][y_true == 1].mean() - return_dict["y_pred"][y_true == 0].mean()))
-    #     loss += self.regularization_loss() + debiasing_loss + margin_loss
-    #     return loss
+        
