@@ -232,6 +232,7 @@ PopPredictor_default:
   shuffle: True
   dnn_hidden_units: [ 500, 500, 500 ]
   dnn_activations: relu
+  reduce_lr_on_plateau: False
   seed: 2019
   monitor: { 'AUC': 1, 'logloss': -1 }
   monitor_mode: 'max'

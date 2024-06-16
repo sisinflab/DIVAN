@@ -43,13 +43,14 @@ if __name__ == '__main__':
                                 --embedding_size [64|128|256] --embedding_type [contrastive|bert|roberta]
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--size', type=str, default='large', help='The size of the dataset to download')
+    parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
     parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
     parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
+    parser.add_argument('--test2', action="store_true", help='Use this flag to download the test set (default no)')
     parser.add_argument('--embedding_size', type=int, default=64,
                         help='The embedding size you want to reduce the initial embeddings')
-    parser.add_argument('--embedding_type', type=str, default="contrastive",
+    parser.add_argument('--embedding_type', type=str, default="roberta",
                         help='The embedding type you want to use')
 
     args = vars(parser.parse_args())
@@ -87,11 +88,10 @@ if __name__ == '__main__':
         print("Downloading the data set")
         download_ebnerd_dataset(dataset_size, dataset_path, dataset_path + '/train/', dataset_path + '/test/')
 
-        if args['neg_sampling']:
-            create_test2()
+        if args['test2']:
+            create_test2(dataset_path)
 
     # Once downloaded the dataset, we have history, behaviors, articles and the embeddings
-    MAX_SEQ_LEN = 50
     train_path = dataset_path + '/train/'
     dev_path = dataset_path + '/validation/'
     test_path = dataset_path + '/test/'
@@ -103,7 +103,15 @@ if __name__ == '__main__':
     test_news_file = os.path.join(test_path, "articles.parquet")
     test_news = pl.scan_parquet(test_news_file)
 
-    news = pl.concat([train_news, test_news])
+    if args['test2']:
+        test2_path = dataset_path + '/test2/'
+        if not os.path.isdir(test2_path):
+            create_test2(dataset_path)
+        test2_news_file = os.path.join(test2_path, "articles.parquet")
+        test2_news = pl.scan_parquet(test2_news_file)
+        news = pl.concat([train_news, test_news, test2_news])
+    else:
+        news = pl.concat([train_news, test_news])
     news = news.unique(subset=['article_id'])
     news = news.fill_null("")
 
@@ -164,11 +172,11 @@ if __name__ == '__main__':
                 publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
                 publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
                 impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
-                impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32),
+                # impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32),
             )
             .with_columns(
-                pl.col("publish_days").clip_max(3).alias("pulish_3day"),
-                pl.col("publish_days").clip_max(7).alias("pulish_7day"),
+                # pl.col("publish_days").clip_max(3).alias("pulish_3day"),
+                # pl.col("publish_days").clip_max(7).alias("pulish_7day"),
                 pl.col("publish_days").clip_max(30),
                 pl.col("publish_hours").clip_max(24)
             )
@@ -191,6 +199,7 @@ if __name__ == '__main__':
     print("Train samples", train_df.shape)
     train_df.write_csv(f"{data_folder}/{dataset_version}/train.csv")
     del train_df
+    gc.collect()
 
     valid_df = join_data(dev_path)
     print(valid_df.head())
@@ -204,6 +213,14 @@ if __name__ == '__main__':
         print(test_df.head())
         print("Test samples", test_df.shape)
         test_df.write_csv(f"{data_folder}/{dataset_version}/test.csv")
+        del test_df
+        gc.collect()
+
+    if args['test2']:
+        test_df = join_data(test2_path)
+        print(test_df.head())
+        print("Test samples", test_df.shape)
+        test_df.write_csv(f"{data_folder}/{dataset_version}/test2.csv")
         del test_df
         gc.collect()
 
