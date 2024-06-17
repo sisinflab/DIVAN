@@ -89,7 +89,9 @@ if __name__ == '__main__':
     train_df = pl.read_csv(os.path.join(dataset_folder, "train.csv"))
     print(train_df.head())
     print("Train samples", train_df.shape)
-    train_gen, valid_gen = RankDataLoader(feature_map, stage='train', **virality_predictor_params).make_iterator()
+    virality_predictor_params["shuffle"]= False
+    train_gen, valid_gen = RankDataLoader(feature_map, stage='train',
+                                          **virality_predictor_params).make_iterator()
     logging.info(f"Computing the virality score with {model_class} for the Training Dataset ")
     train_df = train_df.with_columns(
         pl.Series("virality_score", model.predict(train_gen, inference=True))
