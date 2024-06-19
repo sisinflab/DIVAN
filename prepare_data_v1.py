@@ -111,8 +111,13 @@ if __name__ == '__main__':
         test2_news_file = os.path.join(test2_path, "articles.parquet")
         test2_news = pl.scan_parquet(test2_news_file)
         news = pl.concat([train_news, test_news, test2_news])
+        del test2_news
     else:
         news = pl.concat([train_news, test_news])
+    
+    del train_news, test_news
+    gc.collect()
+
     news = news.unique(subset=['article_id'])
     news = news.fill_null("")
 
@@ -188,6 +193,9 @@ if __name__ == '__main__':
     )
 
     news2pop = dict(zip(news["article_id"].cast(str), news["popularity_score"].cast(str)))
+
+    del R, popularity_scores
+    gc.collect()
 
     print(news.head())
     print("Save news info...")
@@ -333,6 +341,7 @@ if __name__ == '__main__':
     print("Train samples", train_df.shape)
     train_df.write_csv(f"{data_folder}/{dataset_version}/train.csv")
     del train_df
+    gc.collect()
 
     valid_df = join_data(dev_path)
     print(valid_df.head())
@@ -369,6 +378,8 @@ if __name__ == '__main__':
     }
     print(f"Save image_emb_dim{embedding_size}.npz...")
     np.savez(f"{data_folder}/{dataset_version}/image_emb_dim{embedding_size}.npz", **item_dict)
+    del image_emb_df, image_emb, item_dict
+    gc.collect()
 
     for embedding_type in embedding_types:
         emb_path = dataset_path + f'/{embedding_type}_vector.parquet'
@@ -381,6 +392,8 @@ if __name__ == '__main__':
         }
         print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
         np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
+        del emb, item_dict
+        gc.collect()
 
         print("Create a representation of the inviews")
         if args['test']:
@@ -401,5 +414,6 @@ if __name__ == '__main__':
         }
         print(f"Save inviews_emb_dim{embedding_size}.npz...")
         np.savez(f"{data_folder}/{dataset_version}/inviews_{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-
+        del emb_df, behaviors, impr_ids, inviews_vectors, inviews_emb, item_dict
+        gc.collect()
     print("All done.")

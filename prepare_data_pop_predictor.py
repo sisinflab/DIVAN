@@ -141,21 +141,21 @@ if __name__ == '__main__':
     def join_data(data_path):
         behavior_file = os.path.join(data_path, "behaviors.parquet")
         sample_df = pl.scan_parquet(behavior_file)
-        sample_df = sample_df.select(
-            ['impression_id', 'article_id', 'impression_time', 'article_ids_inview', 'article_ids_clicked',
-             'next_read_time', 'next_scroll_percentage'])
         if "test/" in data_path:
+            sample_df = sample_df.select(
+            ['impression_id', 'impression_time', 'article_ids_inview'])
             sample_df = (
                 sample_df.rename({"article_ids_inview": "article_id"})
                 .explode('article_id')
             )
             sample_df = sample_df.with_columns(
-                pl.lit(None).alias("trigger_id"),
                 pl.lit(0).alias("click")
-            )
+            ).collect()
         else:
+            sample_df = sample_df.select(
+            ['impression_id', 'impression_time', 'article_ids_inview', 'article_ids_clicked'])
             sample_df = (
-                sample_df.rename({"article_id": "trigger_id"})
+                sample_df
                 .rename({"article_ids_inview": "article_id"})
                 .explode('article_id')
                 .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
@@ -172,17 +172,16 @@ if __name__ == '__main__':
                 publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
                 publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
                 impression_hour=pl.col('impression_time').dt.hour().cast(pl.Int32),
-                # impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32),
+                impression_weekday=pl.col('impression_time').dt.weekday().cast(pl.Int32),
             )
             .with_columns(
-                # pl.col("publish_days").clip_max(3).alias("pulish_3day"),
-                # pl.col("publish_days").clip_max(7).alias("pulish_7day"),
+                pl.col("publish_days").clip_max(3).alias("pulish_3day"),
+                pl.col("publish_days").clip_max(7).alias("pulish_7day"),
                 pl.col("publish_days").clip_max(30),
                 pl.col("publish_hours").clip_max(24)
             )
             .drop(
-                ["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time",
-                 "trigger_id", "premium"])
+                ["impression_time", "published_time", "last_modified_time", "premium"])
         )
         print(sample_df.columns)
         return sample_df

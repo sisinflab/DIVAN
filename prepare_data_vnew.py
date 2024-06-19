@@ -92,7 +92,7 @@ if __name__ == '__main__':
             create_test2(dataset_path)
 
     dataset_version = f"{dataset_size}_{embedding_types}{embedding_size}_{tag}"
-    virality_version = 'Ebnerd_' + dataset_version + "_" + "PopPredictor"
+    virality_version = f"Ebnerd_{dataset_size}_{embedding_types}64_{tag}_PopPredictor"
     if args["neg_sampling"]:
         dataset_version += "_" + "bpr"
 

@@ -83,8 +83,6 @@ class VDIN(BaseModel):
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
-        self.checkpoint = os.path.abspath(
-            os.path.join(self.model_dir, self.model_id + datetime.now().strftime("%b%d_%H-%M-%S") + ".model"))
 
     def get_virality_score(self, inputs):
         return inputs[:, self.feature_map.get_column_index("virality_score")]
@@ -92,9 +90,9 @@ class VDIN(BaseModel):
     def forward(self, inputs):
         X = self.get_inputs(inputs)
         labels = self.get_labels(inputs)
-        self.pv = self.get_virality_score(inputs).unsqueeze(1)  # prob based on virality
+        pv = self.get_virality_score(inputs).unsqueeze(1)  # prob based on virality
         eps = 1e-45
-        y_pred_viral = - torch.log((1 - self.pv + eps) / (self.pv + eps)).to(self.device)  # get the virality scores
+        y_pred_viral = - torch.log((1 - pv + eps) / (pv + eps)).to(self.device)  # get the virality scores
         feature_emb_dict = self.embedding_layer(X)
         for idx, (target_field, sequence_field) in enumerate(zip(self.din_target_field,
                                                                  self.din_sequence_field)):
@@ -169,16 +167,16 @@ class VDIN(BaseModel):
                 logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
                 self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
                 self.writer.add_scalars("mean_comb_scores", {
-                    "mean_positive_comb_scores": return_dict['positive_y_pred'].mean() / self._eval_steps,
-                    "mean_negative_comb_scores": return_dict['negative_y_pred'] / self._eval_steps
+                    "mean_positive_comb_scores": return_dict['positive_y_pred'],
+                    "mean_negative_comb_scores": return_dict['negative_y_pred']
                 }, self._epoch_index)
                 self.writer.add_scalars("mean_din_scores", {
-                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
-                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
+                    "mean_positive_din_scores": return_dict['positive_y_pred_din'],
+                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] 
                 }, self._epoch_index)
                 self.writer.add_scalars("mean_virality_scores", {
-                    "mean_positive_virality_scores": return_dict['positive_y_pred_viral'] / self._eval_steps,
-                    "mean_negative_virality_scores": return_dict['negative_y_pred_viral'] / self._eval_steps
+                    "mean_positive_virality_scores": return_dict['positive_y_pred_viral'],
+                    "mean_negative_virality_scores": return_dict['negative_y_pred_viral']
                 }, self._epoch_index)
                 self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
                 train_loss = 0

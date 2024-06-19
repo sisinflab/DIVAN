@@ -1,14 +1,14 @@
 base_config: ./config/base_config/
-base_expid: PopPredictor_default #TO CHECK
+base_expid: PopPredictor_default
 dataset_id: ebnerd_large_x1_pop_pr
 
 dataset_config:
   ebnerd_large_x1_pop_pr:
     data_root: ./data/
     data_format: csv
-    train_data: ./data/Ebnerd_large_contrastive64_x1_PopPredictor/train.csv
-    valid_data: ./data/Ebnerd_large_contrastive64_x1_PopPredictor/valid.csv
-    test_data: ./data/Ebnerd_large_contrastive64_x1_PopPredictor/valid.csv
+    train_data: ./data/Ebnerd_large_roberta128_x1_PopPredictor/train.csv
+    valid_data: ./data/Ebnerd_large_roberta128_x1_PopPredictor/valid.csv
+    test_data: ./data/Ebnerd_large_roberta128_x1_PopPredictor/valid.csv
     min_categr_count: 10
     data_block_size: 50000
     streaming: True
@@ -30,10 +30,10 @@ dataset_config:
       - { name: pulish_3day, active: True, dtype: str, type: categorical }
       - { name: pulish_7day, active: True, dtype: str, type: categorical }
       - { name: article_id_img, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_contrastive64_x1_PopPredictor/image_emb_dim64.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_roberta128_x1_PopPredictor/image_emb_dim128.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: article_id_text, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_contrastive64_x1_PopPredictor/contrastive_emb_dim64.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_roberta128_x1_PopPredictor/roberta_emb_dim128.npz",
           pretrain_usage: "init", min_categr_count: 1 }
     label_col: { name: click, dtype: float }
 
