@@ -30,17 +30,17 @@ dataset_config:
       - { name: pulish_3day, active: True, dtype: str, type: categorical }
       - { name: pulish_7day, active: True, dtype: str, type: categorical }
       - { name: article_id_img, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_roberta128_x1_PopPredictor/image_emb_dim128.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 128, pretrained_emb: "./data/Ebnerd_large_roberta128_x1_PopPredictor/image_emb_dim128.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: article_id_text, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_roberta128_x1_PopPredictor/roberta_emb_dim128.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 128, pretrained_emb: "./data/Ebnerd_large_roberta128_x1_PopPredictor/roberta_emb_dim128.npz",
           pretrain_usage: "init", min_categr_count: 1 }
     label_col: { name: click, dtype: float }
 
 
 tuner_space:
   model_root: './checkpoints/'
-  embedding_dim: 64
+  embedding_dim: 128
   embedding_regularizer: 0.001
   net_dropout: 0.3
   net_regularizer: 0.0001
