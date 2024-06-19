@@ -8,7 +8,7 @@ dataset_config:
     data_format: csv
     train_data: ./data/large_roberta128_x1_bpr/train.csv
     valid_data: ./data/large_roberta128_x1_bpr/valid.csv
-    test_data: ./data/large_roberta128_x1_bpr/test2.csv
+    test_data: ./data/large_roberta128_x1_bpr/test.csv
     min_categr_count: 10
     data_block_size: 100000
     streaming: True
@@ -99,20 +99,21 @@ tuner_space:
   ] ]
   embedding_dim: 128
   dnn_hidden_units: [ [1024, 512, 256] ]
-  attention_hidden_units: [ [256, 128] ]
+  attention_hidden_units: [ [128, 64] ]
   attention_hidden_activations: ReLU
   dnn_activations: ReLU
   attention_output_activation: null
   din_sequence_field: [ [ !!python/tuple [ hist_id, hist_cat, hist_subcat1, hist_topic1, hist_topic2, hist_topic3, hist_sentiment, hist_type, hist_pop ], !!python/tuple [ hist_id_img, hist_id_text ] ] ]
   din_target_field: [ [ !!python/tuple [ article_id, category, subcat1, topic1, topic2, topic3, sentiment_label, article_type, popularity_score ], !!python/tuple [ article_id_img, article_id_text ] ] ]
   din_use_softmax: False
-  embedding_regularizer: 0.0001
+  embedding_regularizer: 0.001
   attention_dropout: 0.2
   net_dropout: 0.3
+  net_regularizer: 0.0001
   gate_hidden_units: [ [128, 64] ]
   gate_dropout: 0.2
   batch_norm: False
-  learning_rate: 0.0001
+  learning_rate: 0.001
   optimizer: adam
   loss: 'bpr' # 'bpr', 'binary_crossentropy'
   batch_size: 750
