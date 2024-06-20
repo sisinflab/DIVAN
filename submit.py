@@ -45,16 +45,13 @@ if __name__ == '__main__':
     ''' Usage: python submit.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
-    parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
     parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_small_x1_tuner_config_01',
                         help='The config directory.')
     parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_small_x1_001_3c318e74',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
-    parser.add_argument('--embedding_size', type=int, default=64,
-                        help='The embedding size you want to reduce the initial embeddings')
-    parser.add_argument('--embedding_types', type=str, default='roberta', help='The embedding type you want to use')
+    parser.add_argument('--test_file', type=str, default="./data/small_roberta128_x1_bpr/test.csv", help='The test csv file')
+
     args = vars(parser.parse_args())
 
     experiment_id = args['expid']
@@ -63,13 +60,6 @@ if __name__ == '__main__':
     set_logger(params)
     logging.info("Params: " + print_to_json(params))
     seed_everything(seed=params['seed'])
-    dataset_size = args['size']
-    data_folder = args['data_folder']
-    embedding_size = args['embedding_size']
-    embedding_types = args['embedding_types']
-    tag = args['tag']
-
-    dataset_version = f"{dataset_size}_{embedding_types}{embedding_size}_{tag}"
 
     data_dir = os.path.join(params['data_root'], params['dataset_id'])
     feature_map_json = os.path.join(data_dir, "feature_map.json")
@@ -89,7 +79,7 @@ if __name__ == '__main__':
     model.load_weights(model.checkpoint)
 
     test_gen = RankDataLoader(feature_map, stage='test', **params).make_iterator()
-    ans = pl.scan_csv(f"{data_folder}/{dataset_version}/test.csv")
+    ans = pl.scan_csv("./data/small_roberta128_x1_bpr/test.csv")
     ans = ans.select(['impression_id', 'user_id']).collect().to_pandas()
     logging.info("Predicting scores...")
     ans["score"] = model.predict(test_gen)
