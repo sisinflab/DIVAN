@@ -15,54 +15,61 @@
 # =========================================================================
 
 import os
+
 os.chdir(os.path.dirname(os.path.realpath(__file__)))
-import sys
 import logging
-import fuxictr_version
-from fuxictr import datasets
-from datetime import datetime
-from fuxictr.utils import load_config, set_logger, print_to_json, print_to_list
+from fuxictr.utils import load_config, set_logger, print_to_json
 from fuxictr.features import FeatureMap
 from fuxictr.pytorch.dataloaders import RankDataLoader
 from fuxictr.pytorch.torch_utils import seed_everything
 from fuxictr.preprocess import FeatureProcessor, build_dataset
 import src
-import gc
 import argparse
 import os
-from pathlib import Path
 import polars as pl
 import shutil
-import multiprocessing as mp
-import pandas as pd
+
 
 
 def grank(x):
     scores = x["score"].tolist()
     tmp = [(i, s) for i, s in enumerate(scores)]
     tmp = sorted(tmp, key=lambda y: y[-1], reverse=True)
-    rank = [(i+1, t[0]) for i, t in enumerate(tmp)]
+    rank = [(i + 1, t[0]) for i, t in enumerate(tmp)]
     rank = [str(r[0]) for r in sorted(rank, key=lambda y: y[-1])]
     rank = "[" + ",".join(rank) + "]"
     return str(x["impression_id"].iloc[0]) + " " + rank
 
-dataset = "large"  # demo, small, large
 
 if __name__ == '__main__':
     ''' Usage: python submit.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01', help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_{dataset}_x1_001_3c318e74', help='The experiment id to run.')
+    parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
+    parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
+    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_small_x1_tuner_config_01',
+                        help='The config directory.')
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_small_x1_001_3c318e74',
+                        help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
+    parser.add_argument('--embedding_size', type=int, default=64,
+                        help='The embedding size you want to reduce the initial embeddings')
+    parser.add_argument('--embedding_types', type=str, default='roberta', help='The embedding type you want to use')
     args = vars(parser.parse_args())
-    
+
     experiment_id = args['expid']
     params = load_config(args['config'], experiment_id)
     params['gpu'] = args['gpu']
     set_logger(params)
     logging.info("Params: " + print_to_json(params))
     seed_everything(seed=params['seed'])
+    dataset_size = args['size']
+    data_folder = args['data_folder']
+    embedding_size = args['embedding_size']
+    embedding_types = args['embedding_types']
+    tag = args['tag']
+
+    dataset_version = f"{dataset_size}_{embedding_types}{embedding_size}_{tag}"
 
     data_dir = os.path.join(params['data_root'], params['dataset_id'])
     feature_map_json = os.path.join(data_dir, "feature_map.json")
@@ -74,16 +81,15 @@ if __name__ == '__main__':
     feature_map = FeatureMap(params['dataset_id'], data_dir)
     feature_map.load(feature_map_json, params)
     logging.info("Feature specs: " + print_to_json(feature_map.features))
-    
+
     model_class = getattr(src, params['model'])
     model = model_class(feature_map, **params)
     model.count_parameters()  # print number of parameters used in model
     model.to(device=model.device)
     model.load_weights(model.checkpoint)
-    
-    params["batch_size"] = 16000
+
     test_gen = RankDataLoader(feature_map, stage='test', **params).make_iterator()
-    ans = pl.scan_csv(f"./data/Ebnerd_demo/Ebnerd_{dataset}_x1/test.csv")
+    ans = pl.scan_csv(f"{data_folder}/{dataset_version}/test.csv")
     ans = ans.select(['impression_id', 'user_id']).collect().to_pandas()
     logging.info("Predicting scores...")
     ans["score"] = model.predict(test_gen)
