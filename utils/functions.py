@@ -11,6 +11,8 @@ from pandas.core.common import flatten
 import polars as pl
 import gc
 from datetime import timedelta
+import os
+import shutil
 
 from utils.polars_utils import (
     _check_columns_in_df,
@@ -147,6 +149,73 @@ def create_user_id_to_int_mapping(
         key=user_col,
         value=value_str,
     )
+
+
+def create_chunks(dataset_path, output_path, num_users):
+    # Behaviours Large
+    print(f"Slicing for train")
+    df_history_train = pl.scan_parquet(f"{dataset_path}/train/history.parquet")
+    df_behaviours_train = pl.scan_parquet(f"{dataset_path}/train/behaviors.parquet")
+    df_articles_train = pl.scan_parquet(f"{dataset_path}/train/articles.parquet")
+
+    df_history_val = pl.scan_parquet(f"{dataset_path}/validation/history.parquet")
+    df_behaviours_val = pl.scan_parquet(f"{dataset_path}/validation/behaviors.parquet")
+    df_articles_val = pl.scan_parquet(f"{dataset_path}/validation/articles.parquet")
+    df_history_train = df_history_train.collect().sample(fraction=1.0, with_replacement=False)
+    df_history_val = df_history_val.collect().sample(fraction=1.0, with_replacement=False)
+    for idx, chunk in enumerate(df_history_train.iter_slices(num_users)):
+        create_chunk(idx, chunk, df_behaviours_train, df_articles_train, output_path, "train")
+    for idx, chunk in enumerate(df_history_val.iter_slices(num_users)):
+        create_chunk(idx, chunk, df_behaviours_val, df_articles_val, output_path, "validation")
+        copy_folder(f"{dataset_path}/test2", os.path.join(output_path, "test2"))
+        copy_file(f"{dataset_path}/roberta_vector.parquet",
+                  os.path.join(output_path, "roberta_vector.parquet"))
+        copy_file(f"{dataset_path}/image_embeddings.parquet",
+                  os.path.join(output_path, "image_embeddings.parquet"))
+
+
+def copy_file(src, dst):
+    # Check if the source file exists
+    if not os.path.isfile(src):
+        print(f"Source file '{src}' does not exist.")
+        return
+
+    # Copy the file
+    shutil.copy2(src, dst)
+    print(f"Copied '{src}' to '{dst}'")
+
+
+def create_chunk(idx, chunk, df_behaviors, df_articles, output_path, split):
+    chunk_user_ids = chunk.select("user_id").to_numpy().flatten()
+    behaviours_chunk = df_behaviors.filter(pl.col("user_id").is_in(chunk_user_ids))
+    article_id_inview = behaviours_chunk.select("article_ids_inview").explode("article_ids_inview").rename(
+        {"article_ids_inview": "article_id"}).collect()
+    article_id_history = chunk.select("article_id_fixed").explode("article_id_fixed").rename(
+        {"article_id_fixed": "article_id"})
+    article_id = pl.concat([article_id_inview, article_id_history]).unique().to_numpy().flatten()
+    # Da fare solo per train e test2
+    df_articles = df_articles.filter(pl.col("article_id").is_in(article_id))
+    current_chunk_path = os.path.join(output_path, f"chunk{idx}", split)
+    os.makedirs(current_chunk_path, exist_ok=True)
+    chunk.write_parquet(os.path.join(current_chunk_path, "history.parquet"))
+    behaviours_chunk.collect().write_parquet(os.path.join(current_chunk_path, "behaviors.parquet"))
+    df_articles.collect().write_parquet(os.path.join(current_chunk_path, "articles.parquet"))
+
+
+def copy_folder(src, dst):
+    # Check if the source directory exists
+    if not os.path.exists(src):
+        print(f"Source directory '{src}' does not exist.")
+        return
+
+    # Check if the destination directory already exists
+    if os.path.exists(dst):
+        print(f"Destination directory '{dst}' already exists.")
+        return
+
+    # Copy the entire directory tree
+    shutil.copytree(src, dst)
+    print(f"Copied '{src}' to '{dst}'")
 
 
 def filter_minimum_negative_samples(
