@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from src.Gate import Gate
-
+from fuxictr.pytorch.layers import MLP_Block
 
 class Dense(nn.Module):
     def __init__(self,
@@ -32,36 +32,39 @@ class Dense(nn.Module):
 
 class PopNet(nn.Module):
     def __init__(self,
-                 network_recency_input_dim,
-                 network_recency_hidden_dims,
-                 network_recency_dropout_rate,
-                 network_content_input_dim,
-                 network_content_hidden_dims,
-                 network_content_dropout_rate,
-                 gate_hidden_units=[100],
-                 gate_dropout=0,
+                 recency_input_dim,
+                 content_input_dim,
+                 pop_hidden_units,
+                 pop_activations,
+                 pop_dropout,
+                 pop_batch_norm,
+                 pop_output_activation
                  ):
         super(PopNet, self).__init__()
 
-        self.network_recency = Dense(
-            input_dim=network_recency_input_dim,
-            hidden_dims=network_recency_hidden_dims,
-            dropout_rate=network_recency_dropout_rate
-        )
-        self.network_content = Dense(
-            input_dim=network_content_input_dim,
-            hidden_dims=network_content_hidden_dims,
-            dropout_rate=network_content_dropout_rate
-        )
-        self.gate = Gate(
-            input_dim=network_recency_input_dim + network_content_input_dim,
-            hidden_dims=gate_hidden_units,
-            dropout_rate=gate_dropout
-        )
+        # self.network_recency = Dense(
+        #     input_dim=network_recency_input_dim,
+        #     hidden_dims=network_recency_hidden_dims,
+        #     dropout_rate=network_recency_dropout_rate
+        # )
+        # self.network_content = Dense(
+        #     input_dim=network_content_input_dim,
+        #     hidden_dims=network_content_hidden_dims,
+        #     dropout_rate=network_content_dropout_rate
+        # )
+        # self.gate = Gate(
+        #     input_dim=network_recency_input_dim + network_content_input_dim,
+        #     hidden_dims=gate_hidden_units,
+        #     dropout_rate=gate_dropout
+        # )
+
+        self.dnn = MLP_Block(input_dim=recency_input_dim + content_input_dim,
+                             output_dim=1,
+                             hidden_units=pop_hidden_units,
+                             hidden_activations=pop_activations,
+                             output_activation=pop_dropout,
+                             dropout_rates=pop_batch_norm,
+                             batch_norm=pop_output_activation)
 
     def forward(self, news_recency_emb, news_content_emb):
-        pr = self.network_recency(news_recency_emb)
-        pc = self.network_content(news_content_emb)
-        theta = self.gate(torch.concat([news_recency_emb, news_content_emb], dim=1))  # content-specific aggregator
-        p = theta * pr + (1 - theta) * pc
-        return p
+        return self.dnn(torch.concat([news_recency_emb, news_content_emb], dim=1))  # content-specific aggregator

@@ -37,10 +37,10 @@ class DIVAN(BaseModel):
                  net_regularizer=None,
                  gate_hidden_units=[100],
                  gate_dropout=0,
-                 network_recency_hidden_dims=[100],
-                 network_recency_dropout_rate=0,
-                 network_content_hidden_dims=[100],
-                 network_content_dropout_rate=0,
+                 pop_hidden_units=[512, 256, 128],
+                 pop_activations="ReLu",
+                 pop_dropout=0.3,
+                 pop_batch_norm=False,
                  **kwargs):
         super(DIVAN, self).__init__(feature_map,
                                     model_id=model_id,
@@ -89,15 +89,13 @@ class DIVAN(BaseModel):
                              batch_norm=batch_norm)
 
         self.popnet = PopNet(
-            network_recency_input_dim=embedding_dim * len([i for el in self.recency_field for i in el]),
-            network_recency_hidden_dims=network_recency_hidden_dims,
-            network_recency_dropout_rate=network_recency_dropout_rate,
-            network_content_input_dim=embedding_dim * len([i for el in self.din_target_field for i in el]),
-            network_content_hidden_dims=network_content_hidden_dims,
-            network_content_dropout_rate=network_content_dropout_rate,
-            gate_hidden_units=gate_hidden_units,
-            gate_dropout=gate_dropout)
-
+            recency_input_dim=embedding_dim * len([i for el in self.recency_field for i in el]),
+            content_input_dim=embedding_dim * len([i for el in self.din_target_field for i in el]),
+            pop_hidden_units=pop_hidden_units,
+            pop_activations=pop_activations,
+            pop_dropout=pop_dropout,
+            pop_batch_norm=pop_batch_norm,
+            pop_output_activation=self.output_activation)
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
         self.reset_parameters()
         self.model_to_device()
