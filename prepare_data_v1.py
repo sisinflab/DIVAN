@@ -92,7 +92,7 @@ if __name__ == '__main__':
             create_test2(dataset_path)
 
     # Once downloaded the dataset, we have history, behaviors, articles and the embeddings
-    MAX_SEQ_LEN = 100
+    MAX_SEQ_LEN = 50
     train_path = dataset_path + '/train/'
     dev_path = dataset_path + '/validation/'
     test_path = dataset_path + '/test/'
@@ -414,6 +414,6 @@ if __name__ == '__main__':
         }
         print(f"Save inviews_emb_dim{embedding_size}.npz...")
         np.savez(f"{data_folder}/{dataset_version}/inviews_{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-        del emb_df, behaviors, impr_ids, inviews_vectors, inviews_emb, item_dict
+        del emb_df, impr_ids, inviews_vectors, inviews_emb, item_dict
         gc.collect()
     print("All done.")
