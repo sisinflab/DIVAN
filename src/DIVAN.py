@@ -154,7 +154,6 @@ class DIVAN(BaseModel):
                        "positive_y_pred_pop": y_pred_pop[labels == 1].mean(),
                        "negative_y_pred_pop": y_pred_pop[labels == 0].mean(),
                        "alpha": alpha.mean()}
-        
         return return_dict
 
     def train_step(self, batch_data):
