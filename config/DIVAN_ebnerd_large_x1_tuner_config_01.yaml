@@ -1,9 +1,9 @@
 base_config: ./config/base_config/
 base_expid: DIVAN_default
-dataset_id: ebnerd_demo_x2
+dataset_id: ebnerd_large_x1
 
 dataset_config:
-  ebnerd_demo_x2:
+  ebnerd_large_x1:
     data_root: ./data/
     data_format: csv
     train_data: ./data/Ebnerd_demo_contrastive64_x2/train.csv
@@ -38,13 +38,9 @@ dataset_config:
       #- { name: virality_score, active: True, dtype: float, type: meta, remap: False }
       #- { name: freshness_decay, active: True, dtype: float, type: numeric, fill_na: 0 }
       #- { name: near_realtime_ctr, active: True, dtype: float, type: numeric, fill_na: 0 }
-      #- {name: delta_scroll_percentage, active: False, dtype: float, type: numeric, fill_na: 0}
-      #- {name: delta_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
       - { name: sentiment_label, active: True, dtype: str, type: categorical }
       - { name: subcat1, active: True, dtype: str, type: categorical }
       - { name: topic1, active: True, dtype: str, type: categorical }
-      - { name: topic2, active: True, dtype: str, type: categorical }
-      - { name: topic3, active: True, dtype: str, type: categorical }
       - { name: hist_id, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id }
       - { name: hist_time, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id }
       - { name: hist_scroll_percent, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id }
@@ -52,8 +48,6 @@ dataset_config:
       - { name: hist_cat, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: category }
       - { name: hist_subcat1, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: subcat1 }
       - { name: hist_topic1, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: topic1 }
-      - { name: hist_topic2, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: topic2 }
-      - { name: hist_topic3, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: topic3 }
       - { name: hist_sentiment, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: sentiment_label }
       - { name: hist_type, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_type }
       - { name: hist_pop, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, share_embedding: article_id }
@@ -88,8 +82,6 @@ tuner_space:
     { name: hist_cat, feature_encoder: null },
     { name: hist_subcat1, feature_encoder: null },
     { name: hist_topic1, feature_encoder: null },
-    { name: hist_topic2, feature_encoder: null },
-    { name: hist_topic3, feature_encoder: null },
     { name: hist_sentiment, feature_encoder: null },
     { name: hist_type, feature_encoder: null },
     { name: hist_pop, feature_encoder: null },
@@ -106,8 +98,8 @@ tuner_space:
   attention_output_activation: null
   gate_hidden_units: [ [ 100 ] ]
   gate_dropout: 0.2
-  din_sequence_field: [ [ !!python/tuple [ hist_id, hist_cat, hist_subcat1, hist_topic1, hist_topic2, hist_topic3, hist_sentiment, hist_type, hist_pop ], !!python/tuple [ hist_id_img, hist_id_text ] ] ]
-  din_target_field: [ [ !!python/tuple [ article_id, category, subcat1, topic1, topic2, topic3, sentiment_label, article_type, popularity_score ], !!python/tuple [ article_id_img, article_id_text ] ] ]
+  din_sequence_field: [ [ !!python/tuple [ hist_id, hist_cat, hist_subcat1, hist_topic1, hist_sentiment, hist_type, hist_pop ], !!python/tuple [ hist_id_img, hist_id_text ] ] ]
+  din_target_field: [ [ !!python/tuple [ article_id, category, subcat1, topic1, sentiment_label, article_type, popularity_score ], !!python/tuple [ article_id_img, article_id_text ] ] ]
   recency_field: [ [ !!python/tuple [ publish_days, publish_hours ] ] ]
   din_use_softmax: False
   embedding_regularizer: 0.001
@@ -115,10 +107,14 @@ tuner_space:
   net_dropout: 0.3
   net_regularizer: 0.0001
   batch_norm: False
+  pop_hidden_units: [ [ 512, 256, 128 ]]
+  pop_activations: "ReLu"
+  pop_dropout: 0.3
+  pop_batch_norm: False
   learning_rate: 0.001
   optimizer: adam
   loss: 'bpr' # 'bpr', 'binary_crossentropy'
-  batch_size: 15000
+  batch_size: 1500
   seed: 20242025
   group_id: impression_id
   metrics: [ [ avgAUC, MRR, NDCG(k=5) ] ]

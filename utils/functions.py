@@ -1301,6 +1301,58 @@ def get_enriched_user_history(behavior_df: pl.DataFrame, history_df: pl.DataFram
     return enriched_history_list
 
 
+def compute_item_interactions(history_df: pl.DataFrame):
+    history_df = history_df.select(['user_id', 'article_id_fixed'])
+    # Convert to list of np.array
+    R = [np.unique(np.array(ids)) for ids in history_df['article_id_fixed'].to_list()]
+    R_flatten = np.concatenate(R)
+    item_counts = Counter(R_flatten)
+    return {item: r_ui for item, r_ui in item_counts.items()}
+
+
+def compute_user_interactions(history_df: pl.DataFrame):
+    history_df = history_df.select(['user_id', 'article_id_fixed'])
+    # Convert to list of np.array
+    return {user_id: len(np.unique(np.array(ids))) for user_id, ids in history_df.iter_rows()}
+
+
+def k_core(history_df: pl.DataFrame, k=5):
+    print(f"\nInitial number of users: {len(history_df)}")
+    print(
+        f"Initial number of items: {len([el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])}")
+    user_counts = compute_user_interactions(history_df)
+    # filter user by history length
+    user_counts = {user_id: history_len for user_id, history_len in user_counts.items() if history_len >= k}
+    history_df = history_df.filter(pl.col('user_id').is_in(list(user_counts.keys())))
+    # filter items by number of interactions
+    item_counts = compute_item_interactions(history_df)
+    item_counts = {item_id: num_interactions for item_id, num_interactions in item_counts.items() if
+                   num_interactions >= k}
+    history_df = history_df.with_columns(
+        pl.col('article_id_fixed').map_elements(lambda x: remove_elements_from_lst(x, item_counts.keys())))
+    print(f"Final number of users: {len(history_df)}")
+    print(
+        f"Final number of items: {len([el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])}")
+    return history_df
+
+
+def iterative_k_core(history_df: pl.DataFrame, k=5):
+    condition = True
+    while condition:
+        num_usrs = len(history_df)
+        num_items = len([el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])
+
+        history_df = k_core(history_df, k)
+        condition = not ((num_usrs == len(history_df)) and (num_items == len(
+            [el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])))
+
+    return history_df
+
+
+def remove_elements_from_lst(lst, elements):
+    return [x for x in lst if x in elements]
+
+
 def compute_item_popularity_scores(R: Iterable[np.ndarray]) -> dict[str, float]:
     """Compute popularity scores for items based on their occurrence in user interactions.
 
