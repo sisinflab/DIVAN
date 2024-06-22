@@ -62,9 +62,9 @@ class PopNet(nn.Module):
                              output_dim=1,
                              hidden_units=pop_hidden_units,
                              hidden_activations=pop_activations,
-                             output_activation=pop_dropout,
-                             dropout_rates=pop_batch_norm,
-                             batch_norm=pop_output_activation)
+                             output_activation=pop_output_activation,
+                             dropout_rates=pop_dropout,
+                             batch_norm=pop_batch_norm)
 
     def forward(self, news_recency_emb, news_content_emb):
         return self.dnn(torch.concat([news_recency_emb, news_content_emb], dim=1))  # content-specific aggregator
