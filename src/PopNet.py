@@ -67,4 +67,4 @@ class PopNet(nn.Module):
                              batch_norm=pop_batch_norm)
 
     def forward(self, news_recency_emb, news_content_emb):
-        return self.dnn(torch.concat([news_recency_emb, news_content_emb], dim=1))  # content-specific aggregator
+        return self.dnn(torch.concat([news_recency_emb, news_content_emb], dim=1))
