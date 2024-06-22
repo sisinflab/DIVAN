@@ -96,10 +96,19 @@ class DIVAN(BaseModel):
             pop_dropout=pop_dropout,
             pop_batch_norm=pop_batch_norm,
             pop_output_activation=self.output_activation)
+        
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
+
+    def compute_loss(self, return_dict, y_true):
+        loss = 0.5 * self.loss_fn(return_dict["y_pred"], y_true, reduction='mean')
+        loss += 0.25 * self.loss_fn(return_dict["y_pred_pop"], y_true, reduction='mean')
+        loss += 0.25 * self.loss_fn(return_dict["y_pred_din"], y_true, reduction='mean')
+
+        loss += self.regularization_loss()
+        return loss
 
     def forward(self, inputs):
         X = self.get_inputs(inputs)
@@ -135,17 +144,17 @@ class DIVAN(BaseModel):
         # Combine the two prediction scores with user-specific parameters
         y_pred = alpha * y_pred_din + (1 - alpha) * y_pred_pop
 
-        if self._total_steps % self._eval_steps == 0:
-            return_dict = {"y_pred": y_pred.float(),
-                           "positive_y_pred": y_pred[labels == 1].mean(),
-                           "negative_y_pred": y_pred[labels == 0].mean(),
-                           "positive_y_pred_din": y_pred_din[labels == 1].mean(),
-                           "negative_y_pred_din": y_pred_din[labels == 0].mean(),
-                           "positive_y_pred_pop": y_pred_pop[labels == 1].mean(),
-                           "negative_y_pred_pop": y_pred_pop[labels == 0].mean(),
-                           "alpha": alpha.mean()}
-        else:
-            return_dict = {"y_pred": self.output_activation(y_pred).float()}
+        return_dict = {"y_pred": y_pred.float(),
+                       "y_pred_pop": y_pred_pop.float(),
+                       "y_pred_din": y_pred_din.float(),
+                       "positive_y_pred": y_pred[labels == 1].mean(),
+                       "negative_y_pred": y_pred[labels == 0].mean(),
+                       "positive_y_pred_din": y_pred_din[labels == 1].mean(),
+                       "negative_y_pred_din": y_pred_din[labels == 0].mean(),
+                       "positive_y_pred_pop": y_pred_pop[labels == 1].mean(),
+                       "negative_y_pred_pop": y_pred_pop[labels == 0].mean(),
+                       "alpha": alpha.mean()}
+        
         return return_dict
 
     def train_step(self, batch_data):
@@ -156,7 +165,7 @@ class DIVAN(BaseModel):
         if self.loss_name == 'bpr':
             group_id = self.get_group_id(batch_data)
             return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true,
-                                                                                        return_dict["y_pred"])
+                                                                                        return_dict)
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
             loss = self.compute_loss(return_dict, y_true)
@@ -185,16 +194,16 @@ class DIVAN(BaseModel):
                 logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
                 self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
                 self.writer.add_scalars("mean_comb_scores", {
-                    "mean_positive_comb_scores": return_dict['positive_y_pred'].mean() / self._eval_steps,
-                    "mean_negative_comb_scores": return_dict['negative_y_pred'] / self._eval_steps
+                    "mean_positive_comb_scores": return_dict['positive_y_pred'],
+                    "mean_negative_comb_scores": return_dict['negative_y_pred'] 
                 }, self._epoch_index)
                 self.writer.add_scalars("mean_din_scores", {
-                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
-                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
+                    "mean_positive_din_scores": return_dict['positive_y_pred_din'],
+                    "mean_negative_din_scores": return_dict['negative_y_pred_din']
                 }, self._epoch_index)
                 self.writer.add_scalars("mean_virality_scores", {
-                    "mean_positive_pop_scores": return_dict['positive_y_pred_pop'] / self._eval_steps,
-                    "mean_negative_pop_scores": return_dict['negative_y_pred_pop'] / self._eval_steps
+                    "mean_positive_pop_scores": return_dict['positive_y_pred_pop'],
+                    "mean_negative_pop_scores": return_dict['negative_y_pred_pop'] 
                 }, self._epoch_index)
                 self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
                 train_loss = 0
@@ -252,17 +261,31 @@ class DIVAN(BaseModel):
         else:
             self.loss_fn = get_loss(loss)
 
-    def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
+    def get_scores_grouped_by_impression(self, group_id, y_true, return_dict):
         unique_groups = torch.unique(group_id)
         y_true_list = []
         y_pred_list = []
+        y_pred_pop_list = []
+        y_pred_din_list = []
+
+        y_pred = return_dict['y_pred']
+        y_pred_pop = return_dict['y_pred_pop']
+        y_pred_din = return_dict['y_pred_din']
+
 
         for group in unique_groups:
             mask = (group_id == group)
             y_true_list.append(y_true[mask])
             y_pred_list.append(y_pred[mask])
+            y_pred_pop_list.append(y_pred_pop[mask])
+            y_pred_din_list.append(y_pred_din[mask])
 
-        return_dict = {'y_pred': torch.stack(y_pred_list)}
+
+        return_dict = {
+            'y_pred': torch.stack(y_pred_list),
+            'y_pred_pop': torch.stack(y_pred_pop_list),
+            'y_pred_din': torch.stack(y_pred_din_list)
+            }
 
         return return_dict, torch.stack(y_true_list)
 
@@ -282,9 +305,8 @@ class DIVAN(BaseModel):
 
                 # compute loss on validation
                 if self.loss_name == 'bpr':
-                    return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
-                                                                                                y_true,
-                                                                                                return_dict["y_pred"])
+                    return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true,
+                                                                                        return_dict)
                     loss = self.compute_loss(return_dict_grouped, y_true_grouped)
                 else:
                     loss = self.compute_loss(return_dict, self.get_labels(batch_data))

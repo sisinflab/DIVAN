@@ -1,14 +1,14 @@
 base_config: ./config/base_config/
 base_expid: DIVAN_default
-dataset_id: ebnerd_large_x1
+dataset_id: ebnerd_small_x1
 
 dataset_config:
-  ebnerd_large_x1:
+  ebnerd_small_x1:
     data_root: ./data/
     data_format: csv
-    train_data: ./data/Ebnerd_large_64_x1/train.csv
-    valid_data: ./data/Ebnerd_large_64_x1/valid.csv
-    test_data: ./data/Ebnerd_large_64_x1/test2.csv
+    train_data: ./data/Ebnerd_small_64_x1/train.csv
+    valid_data: ./data/Ebnerd_small_64_x1/valid.csv
+    test_data: ./data/Ebnerd_small_64_x1/test2.csv
     min_categr_count: 10
     data_block_size: 100000
     streaming: True
@@ -58,19 +58,19 @@ dataset_config:
       - { name: pulish_3day, active: True, dtype: str, type: categorical }
       - { name: pulish_7day, active: True, dtype: str, type: categorical }
       - { name: article_id_img, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_64_x1/image_emb_dim64.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_small_64_x1/image_emb_dim64.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: article_id_text, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_64_x1/roberta_emb_dim64.npz",
+          preprocess: "copy_from(article_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_small_64_x1/roberta_emb_dim64.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: inview_emb, active: True, dtype: str, type: categorical, freeze_emb: True,
-          preprocess: "copy_from(impression_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_64_x1/inviews_roberta_emb_dim64.npz",
+          preprocess: "copy_from(impression_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_small_64_x1/inviews_roberta_emb_dim64.npz",
           pretrain_usage: "init", min_categr_count: 1 }
       - { name: hist_id_img, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, freeze_emb: True,
-          preprocess: "copy_from(hist_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_64_x1/image_emb_dim64.npz",
+          preprocess: "copy_from(hist_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_small_64_x1/image_emb_dim64.npz",
           pretrain_usage: "init", min_categr_count: 1, share_embedding: article_id_img }
       - { name: hist_id_text, active: True, dtype: str, type: sequence, splitter: ^, max_len: 50, padding: pre, freeze_emb: True,
-          preprocess: "copy_from(hist_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_large_64_x1/roberta_emb_dim64.npz",
+          preprocess: "copy_from(hist_id)", pretrain_dim: 64, pretrained_emb: "./data/Ebnerd_small_64_x1/roberta_emb_dim64.npz",
           pretrain_usage: "init", min_categr_count: 1, share_embedding: article_id_text }
     label_col: { name: click, dtype: float }
 
