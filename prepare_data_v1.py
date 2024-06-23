@@ -255,7 +255,7 @@ if __name__ == '__main__':
             sample_df = sample_df.with_columns(
                 pl.lit(None).alias("trigger_id"),
                 pl.lit(0).alias("click")
-            )
+            ).collect()
         else:
             if args['neg_sampling']:
                 print("Performing negative sampling...")
