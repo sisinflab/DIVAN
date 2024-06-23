@@ -397,7 +397,7 @@ if __name__ == '__main__':
     print("Create a representation of the inviews")
     if args['test']:
         behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-        behavior_df_test = pl.scan_parquet(behavior_file_test)
+        behavior_df_test = pl.read_parquet(behavior_file_test)
 
         behaviors = pl.concat([behaviors, behavior_df_test])
         behaviors = behaviors.unique(subset=['impression_id'])
