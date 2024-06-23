@@ -49,7 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
     parser.add_argument('--embedding_size', type=int, default=64,
                         help='The embedding size you want to reduce the initial embeddings')
-    parser.add_argument('--embedding_types', type=list, default=['contrastive', 'bert', 'roberta'],
+    parser.add_argument('--embedding_type', type=str, default='roberta',
                         help='The embedding type you want to use')
     parser.add_argument('--neg_sampling', action="store_true", help='Use this flag to perform negative sampling')
 
@@ -57,7 +57,7 @@ if __name__ == '__main__':
     dataset_size = args['size']
     data_folder = args['data_folder']
     embedding_size = args['embedding_size']
-    embedding_types = args['embedding_types']
+    embedding_type = args['embedding_type']
     tag = args['tag']
     dataset_version = f"Ebnerd_{dataset_size}_{embedding_size}_{tag}"
     # insert a check, if data aren't in the repository, download them
@@ -381,39 +381,38 @@ if __name__ == '__main__':
     del image_emb_df, image_emb, item_dict
     gc.collect()
 
-    for embedding_type in embedding_types:
-        emb_path = dataset_path + f'/{embedding_type}_vector.parquet'
-        emb_df = pl.read_parquet(emb_path)
-        emb = pca.fit_transform(np.array(emb_df[emb_df.columns[-1]].to_list()))
-        print(f"{embedding_type}_emb.shape", emb.shape)
-        item_dict = {
-            "key": emb_df["article_id"].cast(str),
-            "value": emb
-        }
-        print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
-        np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-        del emb, item_dict
+    emb_path = dataset_path + f'/{embedding_type}_vector.parquet'
+    emb_df = pl.read_parquet(emb_path)
+    emb = pca.fit_transform(np.array(emb_df[emb_df.columns[-1]].to_list()))
+    print(f"{embedding_type}_emb.shape", emb.shape)
+    item_dict = {
+        "key": emb_df["article_id"].cast(str),
+        "value": emb
+    }
+    print(f"Save {embedding_type}_emb_dim{embedding_size}.npz...")
+    np.savez(f"{data_folder}/{dataset_version}/{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
+    del emb, item_dict
+    gc.collect()
+
+    print("Create a representation of the inviews")
+    if args['test']:
+        behavior_file_test = os.path.join(test_path, "behaviors.parquet")
+        behavior_df_test = pl.scan_parquet(behavior_file_test)
+
+        behaviors = pl.concat([behaviors, behavior_df_test])
+        behaviors = behaviors.unique(subset=['impression_id'])
+        del behavior_df_test
         gc.collect()
 
-        print("Create a representation of the inviews")
-        if args['test']:
-            behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-            behavior_df_test = pl.scan_parquet(behavior_file_test)
-
-            behaviors = pl.concat([behaviors, behavior_df_test])
-            behaviors = behaviors.unique(subset=['impression_id'])
-            del behavior_df_test
-            gc.collect()
-
-        impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
-        inviews_emb = pca.fit_transform(inviews_vectors)
-        print("inviews_emb.shape", inviews_emb.shape)
-        item_dict = {
-            "key": impr_ids.cast(str),
-            "value": inviews_emb
-        }
-        print(f"Save inviews_emb_dim{embedding_size}.npz...")
-        np.savez(f"{data_folder}/{dataset_version}/inviews_{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-        del emb_df, impr_ids, inviews_vectors, inviews_emb, item_dict
-        gc.collect()
+    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
+    inviews_emb = pca.fit_transform(inviews_vectors)
+    print("inviews_emb.shape", inviews_emb.shape)
+    item_dict = {
+        "key": impr_ids.cast(str),
+        "value": inviews_emb
+    }
+    print(f"Save inviews_emb_dim{embedding_size}.npz...")
+    np.savez(f"{data_folder}/{dataset_version}/inviews_{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
+    del emb_df, impr_ids, inviews_vectors, inviews_emb, item_dict
+    gc.collect()
     print("All done.")
