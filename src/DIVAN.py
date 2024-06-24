@@ -48,6 +48,7 @@ class DIVAN(BaseModel):
                                     embedding_regularizer=embedding_regularizer,
                                     net_regularizer=net_regularizer,
                                     **kwargs)
+        self.net_regularizer = net_regularizer
         if not isinstance(din_target_field, list):
             din_target_field = [din_target_field]
         self.din_target_field = din_target_field
@@ -103,11 +104,10 @@ class DIVAN(BaseModel):
         self.loss_name = kwargs["loss"]
 
     def compute_loss(self, return_dict, y_true):
-        loss = 0.5 * self.loss_fn(return_dict["y_pred"], y_true, reduction='mean')
-        loss += 0.25 * self.loss_fn(return_dict["y_pred_pop"], y_true, reduction='mean')
-        loss += 0.25 * self.loss_fn(return_dict["y_pred_din"], y_true, reduction='mean')
+        loss = self.loss_fn(return_dict["y_pred"], y_true, reduction='mean')
+        loss += self.loss_fn(return_dict["y_pred_din"], y_true, reduction='mean')
 
-        loss += self.regularization_loss()
+        loss += self.regularization_loss() + 1e-4 * torch.norm(return_dict["alpha"])
         return loss
 
     def forward(self, inputs):
@@ -153,7 +153,7 @@ class DIVAN(BaseModel):
                        "negative_y_pred_din": y_pred_din[labels == 0].mean(),
                        "positive_y_pred_pop": y_pred_pop[labels == 1].mean(),
                        "negative_y_pred_pop": y_pred_pop[labels == 0].mean(),
-                       "alpha": alpha.mean()}
+                       "alpha": alpha}
         return return_dict
 
     def train_step(self, batch_data):
@@ -168,7 +168,10 @@ class DIVAN(BaseModel):
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
             loss = self.compute_loss(return_dict, y_true)
+        
+        loss += torch.nn.functional.binary_cross_entropy(return_dict["y_pred_pop"], y_true, reduction='mean')
         loss.backward()
+
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
         self.optimizer.step()
         return loss, return_dict
@@ -204,7 +207,7 @@ class DIVAN(BaseModel):
                     "mean_positive_pop_scores": return_dict['positive_y_pred_pop'],
                     "mean_negative_pop_scores": return_dict['negative_y_pred_pop'] 
                 }, self._epoch_index)
-                self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
+                self.writer.add_scalar("alpha", return_dict['alpha'].mean(), self._epoch_index)
                 train_loss = 0
                 self.eval_step()
             if self._stop_training:
@@ -283,7 +286,8 @@ class DIVAN(BaseModel):
         return_dict = {
             'y_pred': torch.stack(y_pred_list),
             'y_pred_pop': torch.stack(y_pred_pop_list),
-            'y_pred_din': torch.stack(y_pred_din_list)
+            'y_pred_din': torch.stack(y_pred_din_list),
+            'alpha': return_dict['alpha']
             }
 
         return return_dict, torch.stack(y_true_list)
@@ -310,6 +314,7 @@ class DIVAN(BaseModel):
                 else:
                     loss = self.compute_loss(return_dict, self.get_labels(batch_data))
 
+                loss += torch.nn.functional.binary_cross_entropy(return_dict["y_pred_pop"], y_true, reduction='mean')
                 val_loss += loss.item()
 
                 y_pred_list.extend(return_dict["y_pred"].data.cpu().numpy().reshape(-1))
