@@ -44,6 +44,15 @@ def read_csv(data_path, sep=",", n_rows=None):
     return ddf
 
 
+def read_csv_in_batches(data_path, sep=",", batch_size=10000):
+    logging.info("Reading file in chunks: " + data_path)
+    file_names = sorted(glob.glob(data_path))
+    assert len(file_names) > 0, f"Invalid data path: {data_path}"
+    file_names = file_names[0]
+    reader = pl.read_csv_batched(file_names, separator=sep, low_memory=True, batch_size=batch_size)
+    return reader
+
+
 def save_npz(darray_dict, data_path):
     logging.info("Saving data to npz: " + data_path)
     os.makedirs(os.path.dirname(data_path), exist_ok=True)
@@ -51,79 +60,38 @@ def save_npz(darray_dict, data_path):
 
 
 def transform_block(feature_encoder, df_block, filename):
+    logging.info("Transform feature columns...")
     darray_dict = feature_encoder.transform(df_block)
     save_npz(darray_dict, os.path.join(feature_encoder.data_dir, filename))
 
 
-def transform(feature_encoder, ddf, filename, block_size=0):
-    logging.info("Transform feature columns...")
-    ddf = ddf.to_pandas()
-    if block_size > 0:
-        pool = mp.Pool(mp.cpu_count() // 2)
-        block_id = 0
-        for idx in range(0, len(ddf), block_size):
-            df_block = ddf.iloc[idx:(idx + block_size)]
-            pool.apply_async(
-                transform_block,
-                args=(feature_encoder,
-                      df_block,
-                      '{}/part_{:05d}.npz'.format(filename, block_id))
-            )
-            block_id += 1
-        del df_block
-        gc.collect()
+def process_split(data_path, split_name, data_block_size=0):
+    if data_path:
+        reader = read_csv_in_batches(data_path, batch_size=data_block_size)
+        batches = reader.next_batches(1)
+        idx = 0
+        while batches:
+            df_current_batches = pl.concat(batches)
+            df_processed = feature_encoder.preprocess(df_current_batches)
+            transform_block(feature_encoder, df_processed.to_pandas(), '{}/part_{:05d}.npz'.format(split_name, idx))
 
-        pool.close()
-        pool.join()
-    else:
-        transform_block(feature_encoder, ddf, filename)
+            del df_current_batches, df_processed
+            gc.collect()
+            batches = reader.next_batches(1)
+            idx += 1
 
 
 def transform_split(feature_encoder, train_data=None, valid_data=None, test_data=None, data_block_size=0, **kwargs):
-    # fit and transform train_ddf
-    if train_data:
-        train_ddf = read_csv(train_data)
-        train_ddf_list = []
-        for df in train_ddf.collect().iter_slices(data_block_size):
-            train_ddf_list.append(feature_encoder.preprocess(df))
-            del df
-            gc.collect()
-        train_ddf = pl.concat(train_ddf_list)
-        transform(feature_encoder, train_ddf, 'train', block_size=data_block_size)
-        del train_ddf, train_ddf_list
-        gc.collect()
-
-    if valid_data:
-        valid_ddf = read_csv(valid_data)
-        valid_ddf_list = []
-        for df in valid_ddf.collect().iter_slices(data_block_size):
-            valid_ddf_list.append(feature_encoder.preprocess(df))
-            del df
-            gc.collect()
-        valid_ddf = pl.concat(valid_ddf_list)
-        transform(feature_encoder, valid_ddf, 'valid', block_size=data_block_size)
-        del valid_ddf, valid_ddf_list
-        gc.collect()
-
-    # Transfrom test_ddf
-    if test_data:
-        test_ddf = read_csv(test_data)
-        test_ddf_list = []
-        for df in test_ddf.collect().iter_slices(data_block_size):
-            test_ddf_list.append(feature_encoder.preprocess(df))
-            del df
-            gc.collect()
-        test_ddf = pl.concat(test_ddf_list)
-        transform(feature_encoder, test_ddf, 'test', block_size=data_block_size)
-        del test_ddf, test_ddf_list
-        gc.collect()
+    # Process each data split
+    process_split(train_data, 'train', data_block_size)
+    process_split(valid_data, 'valid', data_block_size)
+    process_split(test_data, 'test', data_block_size)
     logging.info("Transform csv data to npz done.")
 
     # Return processed data splits
     return os.path.join(feature_encoder.data_dir, "train") if train_data else None, \
         os.path.join(feature_encoder.data_dir, "valid") if valid_data else None, \
-        os.path.join(feature_encoder.data_dir, "test") if (
-            test_data) else None
+        os.path.join(feature_encoder.data_dir, "test") if test_data else None
 
 
 if __name__ == '__main__':
