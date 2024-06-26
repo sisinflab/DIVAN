@@ -28,8 +28,20 @@ import warnings
 import multiprocessing as mp
 import numpy as np
 import polars as pl
+import glob
 
 warnings.filterwarnings("ignore")
+
+
+def read_csv(data_path, sep=",", n_rows=None):
+    logging.info("Reading file: " + data_path)
+    file_names = sorted(glob.glob(data_path))
+    assert len(file_names) > 0, f"Invalid data path: {data_path}"
+    # Require python >= 3.8 for use polars to scan multiple csv files
+    file_names = file_names[0]
+    ddf = pl.scan_csv(source=file_names, separator=sep,
+                      low_memory=True, n_rows=n_rows)
+    return ddf
 
 
 def save_npz(darray_dict, data_path):
@@ -70,7 +82,7 @@ def transform(feature_encoder, ddf, filename, block_size=0):
 def transform_split(feature_encoder, train_data=None, valid_data=None, test_data=None, data_block_size=0, **kwargs):
     # fit and transform train_ddf
     if train_data:
-        train_ddf = feature_encoder.read_csv(train_data, **kwargs)
+        train_ddf = read_csv(train_data)
         train_ddf_list = []
         for df in train_ddf.collect().iter_slices(data_block_size):
             train_ddf_list.append(feature_encoder.preprocess(df))
@@ -82,7 +94,7 @@ def transform_split(feature_encoder, train_data=None, valid_data=None, test_data
         gc.collect()
 
     if valid_data:
-        valid_ddf = feature_encoder.read_csv(valid_data, **kwargs)
+        valid_ddf = read_csv(valid_data)
         valid_ddf_list = []
         for df in valid_ddf.collect().iter_slices(data_block_size):
             valid_ddf_list.append(feature_encoder.preprocess(df))
@@ -95,7 +107,7 @@ def transform_split(feature_encoder, train_data=None, valid_data=None, test_data
 
     # Transfrom test_ddf
     if test_data:
-        test_ddf = feature_encoder.read_csv(test_data, **kwargs)
+        test_ddf = read_csv(test_data)
         test_ddf_list = []
         for df in test_ddf.collect().iter_slices(data_block_size):
             test_ddf_list.append(feature_encoder.preprocess(df))
