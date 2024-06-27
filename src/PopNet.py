@@ -38,7 +38,7 @@ class PopNet(nn.Module):
                  pop_activations,
                  pop_dropout,
                  pop_batch_norm,
-                 pop_output_activation
+                 pop_output_activation=None
                  ):
         super(PopNet, self).__init__()
 
