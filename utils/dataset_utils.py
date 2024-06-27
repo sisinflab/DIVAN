@@ -4,7 +4,6 @@ from torch.utils import data
 import glob
 import logging
 
-
 class Dataset(data.Dataset):
     def __init__(self, feature_map, data_path):
         self.feature_map = feature_map
@@ -28,7 +27,6 @@ class Dataset(data.Dataset):
             data_arrays.append(array)
         data_tensor = torch.from_numpy(np.concatenate(data_arrays, axis=1))
         return data_tensor
-
 
 class NpzDataLoader(data.DataLoader):
     def __init__(self, feature_map, data_path, batch_size=32, shuffle=False, num_workers=1, **kwargs):
@@ -72,7 +70,6 @@ class NpzDataLoader(data.DataLoader):
         # Convert back to ShuffledDataset
         return ShuffledDataset(shuffled_data)
 
-
 class NpzBlockDataLoader(data.DataLoader):
     def __init__(self, feature_map, data_path, batch_size=32, shuffle=False,
                  num_workers=1, buffer_size=100000, **kwargs):
@@ -101,7 +98,6 @@ class NpzBlockDataLoader(data.DataLoader):
             num_samples += block_size
         num_batches = int(np.ceil(num_samples / self.batch_size))
         return num_batches, num_samples
-
 
 class RankDataLoader(object):
     def __init__(self, feature_map, stage="both", train_data=None, valid_data=None, test_data=None,
@@ -137,7 +133,6 @@ class RankDataLoader(object):
             logging.info("Loading data done.")
             return self.train_gen, self.valid_gen, self.test_gen
 
-
 class ShuffledDataset(data.IterableDataset):
     def __init__(self, shuffled_data):
         self.shuffled_data = shuffled_data
@@ -145,7 +140,6 @@ class ShuffledDataset(data.IterableDataset):
     def __iter__(self):
         for sample in self.shuffled_data:
             yield sample
-
 
 class BlockDataPipe(data.IterDataPipe):
     def __init__(self, block_datapipe, feature_map, shuffle=False):
@@ -180,7 +174,7 @@ class BlockDataPipe(data.IterDataPipe):
 
         complete_groups = []
         for group_id, samples in list(self.incomplete_groups.items()):
-            if len(samples) == 15:
+            if len(samples) == 15:  # Assuming group size is fixed as 15
                 complete_groups.extend(samples)
                 del self.incomplete_groups[group_id]
 
@@ -218,22 +212,11 @@ class BlockDataPipe(data.IterDataPipe):
                 if idx % worker_info.num_workers == worker_info.id
             ]
 
-        data_list = []
         for block in block_list:
             block_data = self.read_block(block)
-            data_list.extend(self.merge_incomplete_groups(block_data))
-
-        if self.shuffle:
-            shuffled_dataset = self.grouped_shuffle(data_list)
-            # Check integrity of groups after shuffling
-            group_id_col_idx = list(self.feature_map.features.keys()).index(self.feature_map.group_id)
-            groups = {}
-            for sample in shuffled_dataset:
-                group_id = sample[group_id_col_idx].item()
-                if group_id not in groups:
-                    groups[group_id] = []
-                groups[group_id].append(sample)
-
-            return iter(shuffled_dataset)
-        else:
-            return iter(data_list)
+            complete_groups = self.merge_incomplete_groups(block_data)
+            if self.shuffle:
+                shuffled_dataset = self.grouped_shuffle(complete_groups)
+                yield from shuffled_dataset
+            else:
+                yield from complete_groups
