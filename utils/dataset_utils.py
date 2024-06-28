@@ -72,7 +72,7 @@ class NpzDataLoader(data.DataLoader):
 
 class NpzBlockDataLoader(data.DataLoader):
     def __init__(self, feature_map, data_path, batch_size=32, shuffle=False,
-                 num_workers=1, buffer_size=100000, **kwargs):
+                 num_workers=1, pin_memory=False, buffer_size=100000, **kwargs):
         data_blocks = glob.glob(data_path + "/*.npz")
         assert len(data_blocks) > 0, f"invalid data_path: {data_path}"
         if len(data_blocks) > 1:
@@ -86,7 +86,7 @@ class NpzBlockDataLoader(data.DataLoader):
 
         datapipe = BlockDataPipe(self.data_blocks, feature_map, shuffle=shuffle)
         super(NpzBlockDataLoader, self).__init__(dataset=datapipe, batch_size=batch_size,
-                                                 num_workers=num_workers)
+                                                 num_workers=num_workers, pin_memory=pin_memory)
 
     def __len__(self):
         return self.num_batches

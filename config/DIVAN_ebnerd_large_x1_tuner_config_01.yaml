@@ -110,7 +110,7 @@ tuner_space:
   learning_rate: 1.e-3
   optimizer: adam
   loss: 'bpr' # 'bpr', 'binary_crossentropy'
-  batch_size: 7500
+  batch_size: 1500
   seed: 20242025
   group_id: impression_id
   metrics: [ [ avgAUC, MRR, NDCG(k=5) ] ]
