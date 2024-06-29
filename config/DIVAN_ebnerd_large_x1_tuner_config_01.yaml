@@ -10,7 +10,7 @@ dataset_config:
     valid_data: ./data/Ebnerd_large_64_x1/valid.csv
     test_data: ./data/Ebnerd_large_64_x1/test.csv
     min_categr_count: 10
-    data_block_size: 100000
+    data_block_size: 450000
     streaming: True
     feature_cols:
       - { name: impression_id, active: True, dtype: int, type: meta, remap: False }

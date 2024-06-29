@@ -1,8 +1,28 @@
+# # =========================================================================
+# # Copyright (C) 2023-2024. FuxiCTR Authors. All rights reserved.
+# # Copyright (C) 2022. Huawei Technologies Co., Ltd. All rights reserved.
+# #
+# # Licensed under the Apache License, Version 2.0 (the "License");
+# # you may not use this file except in compliance with the License.
+# # You may obtain a copy of the License at
+# #
+# #     http://www.apache.org/licenses/LICENSE-2.0
+# #
+# # Unless required by applicable law or agreed to in writing, software
+# # distributed under the License is distributed on an "AS IS" BASIS,
+# # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# # See the License for the specific language governing permissions and
+# # limitations under the License.
+# # =========================================================================
+#
+#
+
 import numpy as np
 import torch
 from torch.utils import data
 import glob
 import logging
+
 
 class Dataset(data.Dataset):
     def __init__(self, feature_map, data_path):
@@ -23,10 +43,12 @@ class Dataset(data.Dataset):
         for col in all_cols:
             array = data_dict[col]
             if array.ndim == 1:
-                array = array[:, np.newaxis]
-            data_arrays.append(array)
-        data_tensor = torch.from_numpy(np.concatenate(data_arrays, axis=1))
+                data_arrays.append(array.reshape(-1, 1))
+            else:
+                data_arrays.append(array)
+        data_tensor = torch.from_numpy(np.hstack(data_arrays))
         return data_tensor
+
 
 class NpzDataLoader(data.DataLoader):
     def __init__(self, feature_map, data_path, batch_size=32, shuffle=False, num_workers=1, **kwargs):
@@ -70,9 +92,10 @@ class NpzDataLoader(data.DataLoader):
         # Convert back to ShuffledDataset
         return ShuffledDataset(shuffled_data)
 
+
 class NpzBlockDataLoader(data.DataLoader):
     def __init__(self, feature_map, data_path, batch_size=32, shuffle=False,
-                 num_workers=1, pin_memory=False, buffer_size=100000, **kwargs):
+                 num_workers=1, buffer_size=100000, **kwargs):
         data_blocks = glob.glob(data_path + "/*.npz")
         assert len(data_blocks) > 0, f"invalid data_path: {data_path}"
         if len(data_blocks) > 1:
@@ -86,7 +109,7 @@ class NpzBlockDataLoader(data.DataLoader):
 
         datapipe = BlockDataPipe(self.data_blocks, feature_map, shuffle=shuffle)
         super(NpzBlockDataLoader, self).__init__(dataset=datapipe, batch_size=batch_size,
-                                                 num_workers=num_workers, pin_memory=pin_memory)
+                                                 num_workers=num_workers)
 
     def __len__(self):
         return self.num_batches
@@ -98,6 +121,7 @@ class NpzBlockDataLoader(data.DataLoader):
             num_samples += block_size
         num_batches = int(np.ceil(num_samples / self.batch_size))
         return num_batches, num_samples
+
 
 class RankDataLoader(object):
     def __init__(self, feature_map, stage="both", train_data=None, valid_data=None, test_data=None,
@@ -133,6 +157,7 @@ class RankDataLoader(object):
             logging.info("Loading data done.")
             return self.train_gen, self.valid_gen, self.test_gen
 
+
 class ShuffledDataset(data.IterableDataset):
     def __init__(self, shuffled_data):
         self.shuffled_data = shuffled_data
@@ -140,6 +165,7 @@ class ShuffledDataset(data.IterableDataset):
     def __iter__(self):
         for sample in self.shuffled_data:
             yield sample
+
 
 class BlockDataPipe(data.IterDataPipe):
     def __init__(self, block_datapipe, feature_map, shuffle=False):
@@ -155,30 +181,14 @@ class BlockDataPipe(data.IterDataPipe):
         for col in all_cols:
             array = data_dict[col]
             if array.ndim == 1:
-                array = array[:, np.newaxis]
-            data_arrays.append(array)
-        data_tensor = torch.from_numpy(np.concatenate(data_arrays, axis=1))
+                data_arrays.append(array.reshape(-1, 1))
+            else:
+                data_arrays.append(array)
+        data_tensor = torch.from_numpy(np.hstack(data_arrays))
         return data_tensor
 
     def read_block(self, data_block):
         return self.load_data(data_block)
-
-    def merge_incomplete_groups(self, new_data):
-        group_id_col_idx = list(self.feature_map.features.keys()).index(self.feature_map.group_id)
-        for sample in new_data:
-            group_id = sample[group_id_col_idx].item()
-            if group_id in self.incomplete_groups:
-                self.incomplete_groups[group_id].append(sample)
-            else:
-                self.incomplete_groups[group_id] = [sample]
-
-        complete_groups = []
-        for group_id, samples in list(self.incomplete_groups.items()):
-            if len(samples) == 15:  # Assuming group size is fixed as 15
-                complete_groups.extend(samples)
-                del self.incomplete_groups[group_id]
-
-        return complete_groups
 
     def grouped_shuffle(self, data_list):
         group_id_col_idx = list(self.feature_map.features.keys()).index(self.feature_map.group_id)
@@ -201,6 +211,7 @@ class BlockDataPipe(data.IterDataPipe):
 
         return ShuffledDataset(shuffled_data)
 
+
     def __iter__(self):
         worker_info = data.get_worker_info()
         if worker_info is None:  # single-process data loading
@@ -214,9 +225,9 @@ class BlockDataPipe(data.IterDataPipe):
 
         for block in block_list:
             block_data = self.read_block(block)
-            complete_groups = self.merge_incomplete_groups(block_data)
             if self.shuffle:
-                shuffled_dataset = self.grouped_shuffle(complete_groups)
+                shuffled_dataset = self.grouped_shuffle(block_data)
                 yield from shuffled_dataset
             else:
-                yield from complete_groups
+                yield from block_data
+
