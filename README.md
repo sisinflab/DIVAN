@@ -2,10 +2,9 @@
 
 ### If you want to use venv
 
-1. Please set up the environment as follows.
+1. Please set up the environment as follows (we used python 3.9 and python 3.10).
    ```
-   sudo apt-get install python3.9
-   python3.9 -m venv recsys_din
+   python3 -m venv recsys_din
    source recsys_din/bin/activate
    python -m pip install --upgrade pip
    pip install --no-cache-dir -r requirements.txt
@@ -31,20 +30,23 @@
 1. Download and preprare data
 
     ```bash
-    cd ./data/Ebnerd_large/
-    python prepare_data_v1.py
+    python prepare_data_v1.py --size large --test --embedding_size 64 --neg_sampling
     ```
 
 2. Train the model on train and validation sets:
-
-    ```bash
-    python run_param_tuner.py --config config/DIN_ebnerd_large_x1_tuner_config_01.yaml --gpu 0
-    ```
+   - Train VDIN
+       ```bash
+       python run_param_tuner.py --config config/VDIN_ebnerd_large_x1_tuner_config_01.yaml --gpu 0
+       ```
+   - Train DIVAN
+       ```bash
+       python run_param_tuner.py --config config/DIVAN_ebnerd_large_x1_tuner_config_01.yaml --gpu 0
+       ```
 
 3. Make predictions on the test set:
 
-    Get the experiment_id from running logs or the result csv file DIN_ebnerd_large_x1_tuner_config_01.csv, and then you can run prediction on the test.
+    Get the experiment_id from running logs or the result csv file [VDIN|DIVAN]_ebnerd_large_x1_tuner_config_01.csv, and then you can run prediction on the test.
 
     ```bash
-    python submit.py --config config/DIN_ebnerd_large_x1_tuner_config_01 --expid DIN_ebnerd_large_x1_001_1860e41e --gpu 1
+    python submit.py --config config/[VDIN|DIVAN]_ebnerd_large_x1_tuner_config_01 --expid [VDIN|DIVAN]_ebnerd_large_x1_001_1860e41e --gpu 0
     ```
