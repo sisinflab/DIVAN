@@ -1,13 +1,17 @@
 import numpy as np
 import random
 import json
+import gc
+import os
+import pyarrow.parquet as pq
+import pyarrow as pa
 
 try:
     import polars as pl
 except ImportError:
     print("polars not available")
 
-from utils.python import generate_unique_name
+from utils.python_utils import generate_unique_name
 
 
 def _check_columns_in_df(df: pl.DataFrame, columns: list[str]) -> None:
@@ -64,25 +68,110 @@ def _validate_equal_list_column_lengths(df: pl.DataFrame, col1: str, col2: str) 
         )
 
 
+# def slice_join_dataframes(
+#         df1: pl.DataFrame,
+#         df2: pl.DataFrame,
+#         on: str,
+#         how: str,
+#         chunk_size: int
+# ) -> pl.DataFrame:
+#     """
+#     Join two dataframes optimized for memory efficiency.
+#     """
+#     result_chunks = []
+#
+#     for i, rows in enumerate(df1.iter_slices(chunk_size)):
+#         print(f"Processing chunk {i + 1}")
+#
+#         # Perform the join operation
+#         joined_chunk = rows.join(df2, on=on, how=how)
+#
+#         # Collect the result to the list
+#         result_chunks.append(joined_chunk)
+#
+#         # Free memory by deleting the chunk and triggering garbage collection
+#         del rows
+#         gc.collect()
+#
+#     # Concatenate all chunks into a single DataFrame
+#     result_df = pl.concat(result_chunks)
+#
+#     # Free memory by deleting the intermediate list and triggering garbage collection
+#     del result_chunks
+#     gc.collect()
+#
+#     return result_df
+
 def slice_join_dataframes(
         df1: pl.DataFrame,
         df2: pl.DataFrame,
         on: str,
         how: str,
-) -> pl.DataFrame:
+        chunk_size: int,
+        output_file_prefix: str
+) -> list:
     """
-    Join two dataframes optimized for memory efficiency.
+    Join two dataframes optimized for memory efficiency, saving results to separate files.
     """
-    return pl.concat(
-        (
-            rows.join(
-                df2,
-                on=on,
-                how=how,
-            )
-            for rows in df1.iter_slices()
-        )
-    )
+    chunk_files = []
+
+    for i, rows in enumerate(df1.iter_slices(chunk_size)):
+        print(f"Processing chunk {i + 1}")
+
+        # Perform the join operation
+        joined_chunk = rows.join(df2, on=on, how=how)
+
+        # Save the chunk to disk
+        chunk_file = f"{output_file_prefix}_chunk_{i}.parquet"
+        joined_chunk.write_parquet(chunk_file)
+        chunk_files.append(chunk_file)
+
+        # Free memory by deleting the chunk and triggering garbage collection
+        del rows
+        del joined_chunk
+        gc.collect()
+
+    return chunk_files
+
+
+def concatenate_parquet_files(chunk_files, output_file):
+    """
+    Concatenate multiple Parquet files into a single Parquet file using PyArrow.
+    """
+    # Open the first file and write its schema to the output file
+    first_file = chunk_files.pop(0)
+    table = pq.read_table(first_file)
+    with pq.ParquetWriter(output_file, table.schema) as writer:
+        writer.write_table(table)
+        del table
+
+        # Append the rest of the files
+        for chunk_file in chunk_files:
+            table = pq.read_table(chunk_file)
+            writer.write_table(table)
+            del table
+            gc.collect()
+            os.remove(chunk_file)
+
+
+def concatenate_csv_files(chunk_files, output_file):
+    """
+    Concatenate multiple CSV files into a single CSV file.
+    """
+    # Read the first file and write it to the output file
+    first_file = chunk_files.pop(0)
+    with open(output_file, 'w', newline='') as fout:
+        with open(first_file, 'r') as fin:
+            fout.write(fin.read())
+    os.remove(first_file)
+
+    # Append the rest of the files
+    for chunk_file in chunk_files:
+        with open(chunk_file, 'r') as fin:
+            fin.readline()  # Skip the header
+            with open(output_file, 'a', newline='') as fout:
+                fout.write(fin.read())
+        os.remove(chunk_file)
 
 
 def rename_columns(df: pl.DataFrame, map_dict: dict[str, str]) -> pl.DataFrame:

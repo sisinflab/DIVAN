@@ -4,6 +4,15 @@ from tqdm import tqdm
 import warnings
 import datetime
 import inspect
+from collections import Counter
+from typing import Iterable
+import numpy as np
+from pandas.core.common import flatten
+import polars as pl
+import gc
+from datetime import timedelta
+import os
+import shutil
 
 from utils.polars_utils import (
     _check_columns_in_df,
@@ -11,7 +20,6 @@ from utils.polars_utils import (
     generate_unique_name,
     shuffle_list_column,
 )
-import polars as pl
 from utils.polars_utils import slice_join_dataframes
 
 from utils.constants import (
@@ -24,7 +32,7 @@ from utils.constants import (
     DEFAULT_USER_COL,
     DEFAULT_HISTORY_ARTICLE_ID_COL
 )
-from utils.python import create_lookup_dict
+from utils.python_utils import create_lookup_dict
 
 
 def reorder_lists(df: pl.DataFrame, article_col: str, label_col: str):
@@ -141,6 +149,73 @@ def create_user_id_to_int_mapping(
         key=user_col,
         value=value_str,
     )
+
+
+def create_chunks(dataset_path, output_path, num_users):
+    # Behaviours Large
+    print(f"Slicing for train")
+    df_history_train = pl.scan_parquet(f"{dataset_path}/train/history.parquet")
+    df_behaviours_train = pl.scan_parquet(f"{dataset_path}/train/behaviors.parquet")
+    df_articles_train = pl.scan_parquet(f"{dataset_path}/train/articles.parquet")
+
+    df_history_val = pl.scan_parquet(f"{dataset_path}/validation/history.parquet")
+    df_behaviours_val = pl.scan_parquet(f"{dataset_path}/validation/behaviors.parquet")
+    df_articles_val = pl.scan_parquet(f"{dataset_path}/validation/articles.parquet")
+    df_history_train = df_history_train.collect().sample(fraction=1.0, with_replacement=False)
+    df_history_val = df_history_val.collect().sample(fraction=1.0, with_replacement=False)
+    for idx, chunk in enumerate(df_history_train.iter_slices(num_users)):
+        create_chunk(idx, chunk, df_behaviours_train, df_articles_train, output_path, "train")
+    for idx, chunk in enumerate(df_history_val.iter_slices(num_users)):
+        create_chunk(idx, chunk, df_behaviours_val, df_articles_val, output_path, "validation")
+        copy_folder(f"{dataset_path}/test2", os.path.join(output_path, "test2"))
+        copy_file(f"{dataset_path}/roberta_vector.parquet",
+                  os.path.join(output_path, "roberta_vector.parquet"))
+        copy_file(f"{dataset_path}/image_embeddings.parquet",
+                  os.path.join(output_path, "image_embeddings.parquet"))
+
+
+def copy_file(src, dst):
+    # Check if the source file exists
+    if not os.path.isfile(src):
+        print(f"Source file '{src}' does not exist.")
+        return
+
+    # Copy the file
+    shutil.copy2(src, dst)
+    print(f"Copied '{src}' to '{dst}'")
+
+
+def create_chunk(idx, chunk, df_behaviors, df_articles, output_path, split):
+    chunk_user_ids = chunk.select("user_id").to_numpy().flatten()
+    behaviours_chunk = df_behaviors.filter(pl.col("user_id").is_in(chunk_user_ids))
+    article_id_inview = behaviours_chunk.select("article_ids_inview").explode("article_ids_inview").rename(
+        {"article_ids_inview": "article_id"}).collect()
+    article_id_history = chunk.select("article_id_fixed").explode("article_id_fixed").rename(
+        {"article_id_fixed": "article_id"})
+    article_id = pl.concat([article_id_inview, article_id_history]).unique().to_numpy().flatten()
+    # Da fare solo per train e test2
+    df_articles = df_articles.filter(pl.col("article_id").is_in(article_id))
+    current_chunk_path = os.path.join(output_path, f"chunk{idx}", split)
+    os.makedirs(current_chunk_path, exist_ok=True)
+    chunk.write_parquet(os.path.join(current_chunk_path, "history.parquet"))
+    behaviours_chunk.collect().write_parquet(os.path.join(current_chunk_path, "behaviors.parquet"))
+    df_articles.collect().write_parquet(os.path.join(current_chunk_path, "articles.parquet"))
+
+
+def copy_folder(src, dst):
+    # Check if the source directory exists
+    if not os.path.exists(src):
+        print(f"Source directory '{src}' does not exist.")
+        return
+
+    # Check if the destination directory already exists
+    if os.path.exists(dst):
+        print(f"Destination directory '{dst}' already exists.")
+        return
+
+    # Copy the entire directory tree
+    shutil.copytree(src, dst)
+    print(f"Copied '{src}' to '{dst}'")
 
 
 def filter_minimum_negative_samples(
@@ -1134,3 +1209,224 @@ def append_to_list(lst: list, news_df: pl.DataFrame, n_samples: int):
 def add_soft_neg_samples(df: pl.DataFrame, n_samples: int, news_df: pl.DataFrame):
     df = df.with_columns(pl.col("article_ids_inview").map_elements(lambda x: append_to_list(x, news_df, n_samples)))
     return df
+
+
+def map_feat_id_func(df, column, seq_feat=False):
+    feat_set = set(flatten(df[column].to_list()))
+    map_dict = dict(zip(list(feat_set), range(1, 1 + len(feat_set))))
+    if seq_feat:
+        df = df.with_columns(pl.col(column).apply(lambda x: [map_dict.get(i, 0) for i in x]))
+    else:
+        df = df.with_columns(pl.col(column).apply(lambda x: map_dict.get(x, 0)).cast(str))
+    return df
+
+
+def tokenize_seq(df, column, map_feat_id=True, max_seq_length=5, sep="^"):
+    df = df.with_columns(pl.col(column).apply(lambda x: x[-max_seq_length:]))
+    if map_feat_id:
+        df = map_feat_id_func(df, column, seq_feat=True)
+    df = df.with_columns(pl.col(column).apply(lambda x: f"{sep}".join(str(i) for i in x)))
+    return df
+
+
+def impute_list_with_mean(lst):
+    non_null_values = [x for x in lst if x not in [None, "null"]]
+    if non_null_values:
+        mean_value = sum(non_null_values) / len(non_null_values)
+        return [x if x is not None else mean_value for x in lst]
+    else:
+        return lst
+
+
+def encode_date_list(lst):
+    return [x.timestamp() for x in lst]
+
+
+def compute_near_realtime_ctr(behavior_df: pl.DataFrame, last_n_days=2) -> dict[str, float]:
+    """Compute near realtime ctr for items based on their occurrence in user interactions of the last n days.
+
+        This function calculates the near realtime ctr of each item as the fraction of users who have interacted with that item.
+        The popularity score, p_i, for an item is defined as the number of interactions item received in the last n days divided by the
+        total number of interactions in the last n days.
+
+        Note:
+            Each entry can only have the same item ones.
+
+        Args:
+            R (Iterable[np.ndarray]): An iterable of numpy arrays, where each array represents the items interacted with by a single user.
+                Each element in the array should be a string identifier for an item.
+
+        Returns:
+            dict[str, float]: A dictionary where keys are item identifiers and values are their corresponding near realtime ctr (as floats).
+    """
+    # Collect necessary columns from the DataFrames
+    impression_time_threshold = list(behavior_df['impression_time'].sort(descending=True))[0].date() - timedelta(
+        days=last_n_days - 1)
+    behavior_df = behavior_df.filter(pl.col('impression_time') >= impression_time_threshold).select(
+        ['user_id', 'article_ids_clicked'])
+    # Explode the lists to have one article ID per row
+    behavior_df = behavior_df.explode('article_ids_clicked')
+    # Group by user_id and aggregate the article IDs into a list
+    behavior_df = behavior_df.groupby('user_id').agg(pl.col('article_ids_clicked'))
+    # Convert to list of np.array
+    last_n_days_clicked_list = [np.unique(np.array(ids)) for ids in behavior_df['article_ids_clicked'].to_list()]
+
+    R_flatten = np.concatenate(last_n_days_clicked_list)
+    item_counts = Counter(R_flatten)
+    return {item: (r_ui / len(R_flatten)) for item, r_ui in item_counts.items()}
+
+
+def get_enriched_user_history(behavior_df: pl.DataFrame, history_df: pl.DataFrame) -> list[
+    np.array]:
+    behavior_df = behavior_df.select(['user_id', 'article_ids_clicked'])
+    history_df = history_df.select(['user_id', 'article_id_fixed'])
+
+    # Explode the lists to have one article ID per row
+    behavior_df = behavior_df.explode('article_ids_clicked')
+    history_df = history_df.explode('article_id_fixed')
+
+    # Rename columns to match before concatenation
+    behavior_df = behavior_df.rename({'article_ids_clicked': 'article_id'})
+    history_df = history_df.rename({'article_id_fixed': 'article_id'})
+
+    # Combine the behavior and history DataFrames
+    combined_df = pl.concat([history_df, behavior_df])
+
+    # Group by user_id and aggregate the article IDs into a list
+    enriched_history = combined_df.groupby('user_id').agg(pl.col('article_id').alias('article_ids'))
+
+    # Convert to list of np.array
+    enriched_history_list = [np.unique(np.array(ids)) for ids in enriched_history['article_ids'].to_list()]
+
+    return enriched_history_list
+
+
+def compute_item_interactions(history_df: pl.DataFrame):
+    history_df = history_df.select(['user_id', 'article_id_fixed'])
+    # Convert to list of np.array
+    R = [np.unique(np.array(ids)) for ids in history_df['article_id_fixed'].to_list()]
+    R_flatten = np.concatenate(R)
+    item_counts = Counter(R_flatten)
+    return {item: r_ui for item, r_ui in item_counts.items()}
+
+
+def compute_user_interactions(history_df: pl.DataFrame):
+    history_df = history_df.select(['user_id', 'article_id_fixed'])
+    # Convert to list of np.array
+    return {user_id: len(np.unique(np.array(ids))) for user_id, ids in history_df.iter_rows()}
+
+
+def k_core(history_df: pl.DataFrame, k=5):
+    print(f"\nInitial number of users: {len(history_df)}")
+    print(
+        f"Initial number of items: {len([el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])}")
+    user_counts = compute_user_interactions(history_df)
+    # filter user by history length
+    user_counts = {user_id: history_len for user_id, history_len in user_counts.items() if history_len >= k}
+    history_df = history_df.filter(pl.col('user_id').is_in(list(user_counts.keys())))
+    # filter items by number of interactions
+    item_counts = compute_item_interactions(history_df)
+    item_counts = {item_id: num_interactions for item_id, num_interactions in item_counts.items() if
+                   num_interactions >= k}
+    history_df = history_df.with_columns(
+        pl.col('article_id_fixed').map_elements(lambda x: remove_elements_from_lst(x, item_counts.keys())))
+    print(f"Final number of users: {len(history_df)}")
+    print(
+        f"Final number of items: {len([el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])}")
+    return history_df
+
+
+def iterative_k_core(history_df: pl.DataFrame, k=5):
+    condition = True
+    while condition:
+        num_usrs = len(history_df)
+        num_items = len([el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])
+
+        history_df = k_core(history_df, k)
+        condition = not ((num_usrs == len(history_df)) and (num_items == len(
+            [el for ids in history_df['article_id_fixed'].to_list() for el in np.unique(np.array(ids))])))
+
+    return history_df
+
+
+def remove_elements_from_lst(lst, elements):
+    return [x for x in lst if x in elements]
+
+
+def compute_item_popularity_scores(R: Iterable[np.ndarray]) -> dict[str, float]:
+    """Compute popularity scores for items based on their occurrence in user interactions.
+
+    This function calculates the popularity score of each item as the fraction of users who have interacted with that item.
+    The popularity score, p_i, for an item is defined as the number of users who have interacted with the item divided by the
+    total number of users.
+
+    Formula:
+        p_i = | {u ∈ U}, r_ui != Ø | / |U|
+
+    where p_i is the popularity score of an item, U is the total number of users, and r_ui is the interaction of user u with item i (non-zero
+    interaction implies the user has seen the item).
+
+    Note:
+        Each entry can only have the same item ones.
+
+    Args:
+        R (Iterable[np.ndarray]): An iterable of numpy arrays, where each array represents the items interacted with by a single user.
+            Each element in the array should be a string identifier for an item.
+
+    Returns:
+        dict[str, float]: A dictionary where keys are item identifiers and values are their corresponding popularity scores (as floats).
+
+    Examples:
+    >>> R = [
+            np.array(["item1", "item2", "item3"]),
+            np.array(["item1", "item3"]),
+            np.array(["item1", "item4"]),
+        ]
+    >>> print(compute_item_popularity_scores(R))
+        {'item1': 1.0, 'item2': 0.3333333333333333, 'item3': 0.6666666666666666, 'item4': 0.3333333333333333}
+    """
+    U = len(R)
+    R_flatten = np.concatenate(R)
+    item_counts = Counter(R_flatten)
+    return {item: (r_ui / U) for item, r_ui in item_counts.items()}
+
+
+def create_inviews_vectors(behavior_df, emb_df):
+    # Explode the article_ids_inview column to have one article_id per row
+    exploded_behavior_df = behavior_df.select('impression_id', 'article_ids_inview', ).explode('article_ids_inview')
+
+    del behavior_df
+    gc.collect()
+    # Rename the exploded column for joining
+    exploded_behavior_df = exploded_behavior_df.rename({'article_ids_inview': 'article_id'})
+
+    # Perform a join to get the contrastive vectors for all article_ids
+    joined_df = exploded_behavior_df.join(emb_df, on='article_id', how='left')
+
+    del exploded_behavior_df
+    gc.collect()
+
+    # Group by impression_id and aggregate the vectors to create the mean vector for each impression_id
+    inviews_vectors_df = (
+        joined_df
+        .groupby('impression_id')
+        .agg(
+            pl.col(emb_df.columns[-1]).apply(lambda x: np.array(x).mean(axis=0).tolist()).alias(
+                'inview_vector_mean')
+        )
+    )
+    del joined_df
+    gc.collect()
+
+    impression_ids = inviews_vectors_df['impression_id']
+    inviews_vectors = np.vstack(inviews_vectors_df['inview_vector_mean'].to_list())
+
+    return impression_ids, inviews_vectors
+
+
+def clean_dataframe(row):
+    return (row[0], list(set([x for xs in row[1] for x in xs])))
+
+
+def exponential_decay(freshness, alpha=0.1):
+    return np.exp(-alpha * freshness)

@@ -10,7 +10,8 @@ import time
 import json
 import yaml
 import time
-
+import logging
+import os
 
 def read_json_file(path: str, verbose: bool = False) -> dict:
     if verbose:
@@ -482,3 +483,20 @@ def make_lookup_objects(
 
     lookup_matrix = np.vstack([UNKNOWN_ARRAY, lookup_matrix])
     return lookup_indexes, lookup_matrix
+
+
+def set_logger(params):
+    dataset_id = params['dataset_id']
+    model_id = params.get('model_id', '')
+    log_dir = os.path.join(params.get('model_root', './checkpoints'), dataset_id)
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, model_id + datetime.datetime.now().strftime("%b%d_%H-%M-%S") + '.log')
+
+    # logs will not show in the file without the two lines.
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s P%(process)d %(levelname)s %(message)s',
+                        handlers=[logging.FileHandler(log_file, mode='w'),
+                                  logging.StreamHandler()])

@@ -1,20 +1,5 @@
-# =========================================================================
-# Copyright (C) 2024. FuxiCTR Authors. All rights reserved.
-# Copyright (C) 2022. Huawei Technologies Co., Ltd. All rights reserved.
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# =========================================================================
 import os
+import torch.nn.functional as F
 import numpy as np
 import torch
 from torch import nn
@@ -28,12 +13,13 @@ from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+from src.Gate import Gate
 
 
-class DIN(BaseModel):
+class VDIN(BaseModel):
     def __init__(self,
                  feature_map,
-                 model_id="DIN",
+                 model_id="VDIN",
                  gpu=-1,
                  dnn_hidden_units=[512, 128, 64],
                  dnn_activations="ReLU",
@@ -50,13 +36,15 @@ class DIN(BaseModel):
                  din_use_softmax=False,
                  embedding_regularizer=None,
                  net_regularizer=None,
+                 gate_hidden_units=[100],
+                 gate_dropout=0,
                  **kwargs):
-        super(DIN, self).__init__(feature_map,
-                                  model_id=model_id,
-                                  gpu=gpu,
-                                  embedding_regularizer=embedding_regularizer,
-                                  net_regularizer=net_regularizer,
-                                  **kwargs)
+        super(VDIN, self).__init__(feature_map,
+                                   model_id=model_id,
+                                   gpu=gpu,
+                                   embedding_regularizer=embedding_regularizer,
+                                   net_regularizer=net_regularizer,
+                                   **kwargs)
         if not isinstance(din_target_field, list):
             din_target_field = [din_target_field]
         self.din_target_field = din_target_field
@@ -82,20 +70,29 @@ class DIN(BaseModel):
         self.dnn = MLP_Block(input_dim=feature_map.sum_emb_out_dim(),
                              output_dim=1,
                              hidden_units=dnn_hidden_units,
+                             # output_activation=self.output_activation,
                              hidden_activations=dnn_activations,
-                             output_activation=self.output_activation,
                              dropout_rates=net_dropout,
                              batch_norm=batch_norm)
+        self.gate = Gate(
+            input_dim=embedding_dim * len([i for el in self.din_sequence_field for i in el]),
+            hidden_dims=gate_hidden_units,
+            dropout_rate=gate_dropout
+        )
         self.compile(kwargs["optimizer"], kwargs["loss"], learning_rate)
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
-        self.checkpoint = os.path.abspath(
-            os.path.join(self.model_dir, self.model_id + datetime.now().strftime("%b%d_%H-%M-%S") + ".model"))
+
+    def get_virality_score(self, inputs):
+        return inputs[:, self.feature_map.get_column_index("virality_score")]
 
     def forward(self, inputs):
         X = self.get_inputs(inputs)
         labels = self.get_labels(inputs)
+        pv = self.get_virality_score(inputs).unsqueeze(1)  # prob based on virality
+        eps = 1e-45
+        y_pred_viral = - torch.log((1 - pv + eps) / (pv + eps)).to(self.device)  # get the virality scores
         feature_emb_dict = self.embedding_layer(X)
         for idx, (target_field, sequence_field) in enumerate(zip(self.din_target_field,
                                                                  self.din_sequence_field)):
@@ -108,11 +105,26 @@ class DIN(BaseModel):
                                         pooling_emb.split(self.embedding_dim, dim=-1)):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
-        y_pred = self.dnn(feature_emb)
+        y_pred_din = self.dnn(feature_emb)  # din score (not activated by sigmoid)
+
+        # Get user-specific alpha
+        user_emb = self.embedding_layer.dict2tensor(
+            {i: feature_emb_dict[i] for el in self.din_sequence_field for i in el}, flatten_emb=True)
+        alpha = self.gate(user_emb)
+
+        # Combine the two prediction scores
+        y_pred_logits = alpha * y_pred_din + (1 - alpha) * y_pred_viral
+        y_pred = self.output_activation(y_pred_logits)
+
         if self._total_steps % self._eval_steps == 0:
             return_dict = {"y_pred": y_pred.float(),
-                           "positive_y_pred_din": y_pred[labels == 1].mean(),
-                           "negative_y_pred_din": y_pred[labels == 0].mean()}
+                           "positive_y_pred": y_pred_logits[labels == 1].mean(),
+                           "negative_y_pred": y_pred_logits[labels == 0].mean(),
+                           "positive_y_pred_din": y_pred_din[labels == 1].mean(),
+                           "negative_y_pred_din": y_pred_din[labels == 0].mean(),
+                           "positive_y_pred_viral": y_pred_viral[labels == 1].mean(),
+                           "negative_y_pred_viral": y_pred_viral[labels == 0].mean(),
+                           "alpha": alpha.mean()}
         else:
             return_dict = {"y_pred": y_pred.float()}
         return return_dict
@@ -124,7 +136,8 @@ class DIN(BaseModel):
 
         if self.loss_name == 'bpr':
             group_id = self.get_group_id(batch_data)
-            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id, y_true,
+            return_dict_grouped, y_true_grouped = self.get_scores_grouped_by_impression(group_id,
+                                                                                        y_true,
                                                                                         return_dict["y_pred"])
             loss = self.compute_loss(return_dict_grouped, y_true_grouped)
         else:
@@ -133,6 +146,43 @@ class DIN(BaseModel):
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
         self.optimizer.step()
         return loss, return_dict
+
+    def train_epoch(self, data_generator):
+        self._batch_index = 0
+        train_loss = 0
+
+        self.train()
+        if self._verbose == 0:
+            batch_iterator = data_generator
+        else:
+            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
+        for batch_index, batch_data in enumerate(batch_iterator):
+            self._batch_index = batch_index
+            self._total_steps += 1
+            loss, return_dict = self.train_step(batch_data)
+
+            train_loss += loss.item()
+
+            if self._total_steps % self._eval_steps == 0:
+                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
+                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
+                self.writer.add_scalars("mean_comb_scores", {
+                    "mean_positive_comb_scores": return_dict['positive_y_pred'],
+                    "mean_negative_comb_scores": return_dict['negative_y_pred']
+                }, self._epoch_index)
+                self.writer.add_scalars("mean_din_scores", {
+                    "mean_positive_din_scores": return_dict['positive_y_pred_din'],
+                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] 
+                }, self._epoch_index)
+                self.writer.add_scalars("mean_virality_scores", {
+                    "mean_positive_virality_scores": return_dict['positive_y_pred_viral'],
+                    "mean_negative_virality_scores": return_dict['negative_y_pred_viral']
+                }, self._epoch_index)
+                self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
+                train_loss = 0
+                self.eval_step()
+            if self._stop_training:
+                break
 
     def fit(self, data_generator, epochs=1, validation_data=None,
             max_gradient_norm=10., **kwargs):
@@ -162,31 +212,6 @@ class DIN(BaseModel):
         logging.info("Load best model: {}".format(self.checkpoint))
         self.writer.close()
         self.load_weights(self.checkpoint)
-
-    def train_epoch(self, data_generator):
-        self._batch_index = 0
-        train_loss = 0
-        self.train()
-        if self._verbose == 0:
-            batch_iterator = data_generator
-        else:
-            batch_iterator = tqdm(data_generator, disable=False, file=sys.stdout)
-        for batch_index, batch_data in enumerate(batch_iterator):
-            self._batch_index = batch_index
-            self._total_steps += 1
-            loss, return_dict = self.train_step(batch_data)
-            train_loss += loss.item()
-            if self._total_steps % self._eval_steps == 0:
-                logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
-                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
-                self.writer.add_scalars("mean_din_scores", {
-                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
-                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
-                }, self._epoch_index)
-                train_loss = 0
-                self.eval_step()
-            if self._stop_training:
-                break
 
     def eval_step(self):
         logging.info('Evaluation @epoch {} - batch {}: '.format(self._epoch_index + 1, self._batch_index + 1))
@@ -290,3 +315,4 @@ class DIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             return val_logs
+        
