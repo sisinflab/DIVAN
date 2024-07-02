@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # =========================================================================
-
+import pandas as pd
 
 import fuxictr_version
 import logging
@@ -44,15 +44,6 @@ def read_csv(data_path, sep=",", n_rows=None):
     return ddf
 
 
-def read_csv_in_batches(data_path, sep=",", batch_size=10000):
-    logging.info("Reading file in chunks: " + data_path)
-    file_names = sorted(glob.glob(data_path))
-    assert len(file_names) > 0, f"Invalid data path: {data_path}"
-    file_names = file_names[0]
-    reader = pl.read_csv_batched(file_names, separator=sep, low_memory=True, batch_size=batch_size)
-    return reader
-
-
 def save_npz(darray_dict, data_path):
     logging.info("Saving data to npz: " + data_path)
     os.makedirs(os.path.dirname(data_path), exist_ok=True)
@@ -67,17 +58,15 @@ def transform_block(feature_encoder, df_block, filename):
 
 def process_split(data_path, split_name, data_block_size=0):
     if data_path:
-        reader = read_csv_in_batches(data_path, batch_size=data_block_size)
-        batches = reader.next_batches(1)
         idx = 0
-        while batches:
-            df_current_batches = pl.concat(batches)
-            df_processed = feature_encoder.preprocess(df_current_batches)
+        reader = pd.read_csv(data_path, chunksize=data_block_size)
+        for chunk in reader:
+            chunk = pl.DataFrame(chunk)
+            df_processed = feature_encoder.preprocess(chunk)
             transform_block(feature_encoder, df_processed.to_pandas(), '{}/part_{:05d}.npz'.format(split_name, idx))
 
-            del df_current_batches, df_processed
+            del df_processed
             gc.collect()
-            batches = reader.next_batches(1)
             idx += 1
 
 
@@ -98,9 +87,9 @@ if __name__ == '__main__':
     ''' Usage: python run_expid.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=f'./config/DIVAN_ebnerd_demo_x1_tuner_config_01',
+    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_demo_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIVAN_ebnerd_demo_x1_001_43881344',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_demo_x1_001_eed6a1d6',
                         help='The experiment id to run.')
     parser.add_argument('--split', type=str, default=f'all',
                         help='The split to preprocess [train|valid|test|all].')
