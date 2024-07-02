@@ -1,4 +1,4 @@
-Virality_ebnerd_demo_x1:
+Virality_ebnerd_large_x1:
     batch_size: 8192
     dataset_id: ebnerd_large_x1_virality
     debug_mode: false

@@ -37,6 +37,10 @@ class ViralityRanker(nn.Module):
         self.feature_map = feature_map
         self.model_id = model_id
         self.device = get_device(gpu)
+        self.model_to_device()
+
+    def model_to_device(self):
+        self.to(device=self.device)
 
     def get_inputs(self, inputs, feature_source=None):
         if feature_source and type(feature_source) == str:

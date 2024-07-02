@@ -37,6 +37,7 @@ class PopularRanker(nn.Module):
         self.feature_map = feature_map
         self.model_id = model_id
         self.device = get_device(gpu)
+        self.model_to_device()
 
     def get_inputs(self, inputs, feature_source=None):
         if feature_source and type(feature_source) == str:
@@ -49,6 +50,9 @@ class PopularRanker(nn.Module):
                 continue
             X_dict[feature] = inputs[:, self.feature_map.get_column_index(feature)].to(self.device)
         return X_dict
+
+    def model_to_device(self):
+        self.to(device=self.device)
 
     def get_labels(self, inputs):
         """ Please override get_labels() when using multiple labels!
