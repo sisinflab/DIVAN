@@ -1,0 +1,11 @@
+Popular_ebnerd_large_x1:
+    batch_size: 8192
+    dataset_id: ebnerd_large_x1_popularity
+    debug_mode: false
+    feature_config: null
+    group_id: impression_id
+    metrics: [avgAUC, MRR, NDCG(k=5)]
+    model: PopularRanker
+    num_workers: 3
+    seed: 20242025
+    verbose: 1

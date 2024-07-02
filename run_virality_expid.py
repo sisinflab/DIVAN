@@ -39,9 +39,9 @@ if __name__ == '__main__':
     ''' Usage: python run_popular_expid.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=f'./config/PopularRanker_config',
+    parser.add_argument('--config', type=str, default=f'./config/ViralityRanker_config',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'Popular_ebnerd_{dataset}_x1',
+    parser.add_argument('--expid', type=str, default=f'Virality_ebnerd_{dataset}_x1',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())

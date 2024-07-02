@@ -1,0 +1,15 @@
+ebnerd_large_x1_popularity:
+    data_block_size: 100000
+    data_format: csv
+    data_root: ./data/
+    feature_cols:
+    - {active: true, dtype: int, name: impression_id, remap: false, type: meta}
+    - {active: true, dtype: str, name: user_id, type: categorical}
+    - {active: true, dtype: str, name: article_id, type: categorical}
+    - {active: true, dtype: float, fill_na: 0, name: popularity_score, type: numeric}
+    label_col: {dtype: float, name: click}
+    min_categr_count: 10
+    streaming: true
+    test_data: ./data/Ebnerd_large_pop_and_vir_scores/valid.csv
+    train_data: ./data/Ebnerd_large_pop_and_vir_scores/train.csv
+    valid_data: ./data/Ebnerd_large_pop_and_vir_scores/test.csv
