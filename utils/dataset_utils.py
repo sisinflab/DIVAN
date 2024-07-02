@@ -87,10 +87,7 @@ class NpzDataLoader(data.DataLoader):
         np.random.shuffle(group_ids)
 
         # Flatten the shuffled groups
-        shuffled_data = [sample for group_id in group_ids for sample in groups[group_id]]
-
-        # Convert back to ShuffledDataset
-        return ShuffledDataset(shuffled_data)
+        return torch.stack([sample for group_id in group_ids for sample in groups[group_id]])
 
 
 class NpzBlockDataLoader(data.DataLoader):
@@ -158,15 +155,6 @@ class RankDataLoader(object):
             return self.train_gen, self.valid_gen, self.test_gen
 
 
-class ShuffledDataset(data.IterableDataset):
-    def __init__(self, shuffled_data):
-        self.shuffled_data = shuffled_data
-
-    def __iter__(self):
-        for sample in self.shuffled_data:
-            yield sample
-
-
 class BlockDataPipe(data.IterDataPipe):
     def __init__(self, block_datapipe, feature_map, shuffle=False):
         self.feature_map = feature_map
@@ -205,12 +193,7 @@ class BlockDataPipe(data.IterDataPipe):
         group_ids = list(groups.keys())
         if self.shuffle:
             np.random.shuffle(group_ids)
-
-        # Flatten the shuffled groups
-        shuffled_data = [sample for group_id in group_ids for sample in groups[group_id]]
-
-        return ShuffledDataset(shuffled_data)
-
+        return torch.stack([sample for group_id in group_ids for sample in groups[group_id]])
 
     def __iter__(self):
         worker_info = data.get_worker_info()
@@ -230,4 +213,3 @@ class BlockDataPipe(data.IterDataPipe):
                 yield from shuffled_dataset
             else:
                 yield from block_data
-
