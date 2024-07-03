@@ -234,17 +234,33 @@ class VDIN(BaseModel):
         else:
             self.loss_fn = get_loss(loss)
 
-    def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
+    def get_scores_grouped_by_impression(self, group_id, y_true, return_dict):
         unique_groups = torch.unique(group_id)
         y_true_list = []
         y_pred_list = []
+        y_pred_pop_list = []
+        y_pred_din_list = []
+
+        y_pred = return_dict['y_pred']
+        y_pred_pop = return_dict['y_pred_pop']
+        y_pred_din = return_dict['y_pred_din']
 
         for group in unique_groups:
             mask = (group_id == group)
-            y_true_list.append(y_true[mask])
-            y_pred_list.append(y_pred[mask])
+            if mask.sum().item() == 15:
+                y_true_list.append(y_true[mask])
+                y_pred_list.append(y_pred[mask])
+                y_pred_pop_list.append(y_pred_pop[mask])
+                y_pred_din_list.append(y_pred_din[mask])
+            else:
+                print(f"GROUP ID {group} LENGTH IS WRONG REMOVED: {mask.sum().item()}")
 
-        return_dict = {'y_pred': torch.stack(y_pred_list)}
+        return_dict = {
+            'y_pred': torch.stack(y_pred_list),
+            'y_pred_pop': torch.stack(y_pred_pop_list),
+            'y_pred_din': torch.stack(y_pred_din_list),
+            'alpha': return_dict['alpha']
+        }
 
         return return_dict, torch.stack(y_true_list)
 

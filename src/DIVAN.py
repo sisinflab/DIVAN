@@ -278,10 +278,13 @@ class DIVAN(BaseModel):
 
         for group in unique_groups:
             mask = (group_id == group)
-            y_true_list.append(y_true[mask])
-            y_pred_list.append(y_pred[mask])
-            y_pred_pop_list.append(y_pred_pop[mask])
-            y_pred_din_list.append(y_pred_din[mask])
+            if mask.sum().item() == 15:
+                y_true_list.append(y_true[mask])
+                y_pred_list.append(y_pred[mask])
+                y_pred_pop_list.append(y_pred_pop[mask])
+                y_pred_din_list.append(y_pred_din[mask])
+            else:
+                print(f"GROUP ID {group} LENGTH IS WRONG REMOVED: {mask.sum().item()}")
 
         return_dict = {
             'y_pred': torch.stack(y_pred_list),
