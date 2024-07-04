@@ -224,12 +224,13 @@ if __name__ == '__main__':
         ).collect()
 
         behavior_file = os.path.join(data_path, "behaviors.parquet")
-        sample_df = pl.scan_parquet(behavior_file).select('impression_id', 'article_id', 'impression_time',
-                                                          'device_type', 'article_ids_inview', 'article_ids_clicked',
-                                                          'user_id', 'is_sso_user', 'is_subscriber')
+        sample_df = pl.scan_parquet(behavior_file)
         if "test/" in data_path:
             sample_df = (
-                sample_df.rename({"article_ids_inview": "article_id"})
+                sample_df
+                .select('impression_id', 'impression_time', 'device_type', 'article_ids_inview',
+                        'user_id', 'is_sso_user', 'is_subscriber')
+                .rename({"article_ids_inview": "article_id"})
                 .explode('article_id')
                 .with_columns(
                     pl.lit(None).alias("trigger_id"),
@@ -240,13 +241,16 @@ if __name__ == '__main__':
         else:
             sample_df = (
                 sample_df
-                .collect()
+                .select('impression_id', 'article_id', 'impression_time', 'device_type', 'article_ids_inview',
+                        'article_ids_clicked', 'user_id', 'is_sso_user', 'is_subscriber')
                 .with_columns(
                     length=pl.col('article_ids_clicked').map_elements(lambda x: len(x)))
+                .collect()
             )
             if args['neg_sampling']:
                 sample_df = (
-                    sample_df.rename({"article_id": "trigger_id"})
+                    sample_df
+                    .rename({"article_id": "trigger_id"})
                     .filter(pl.col('length') == 1)
                     .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
                           inview_col="article_ids_inview", with_replacement=True, seed=123)
