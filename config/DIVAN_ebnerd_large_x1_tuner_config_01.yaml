@@ -1,9 +1,9 @@
 base_config: ./config/base_config/
 base_expid: DIVAN_default
-dataset_id: ebnerd_demo_x1
+dataset_id: ebnerd_large_x1
 
 dataset_config:
-  ebnerd_demo_x1:
+  ebnerd_large_x1:
     data_root: ./data/
     data_format: csv
     train_data: ./data/Ebnerd_large_64_x1/train.csv
@@ -19,9 +19,6 @@ dataset_config:
       - { name: trigger_id, active: True, dtype: str, type: categorical }
       - { name: device_type, active: True, dtype: str, type: categorical }
       - { name: is_sso_user, active: True, dtype: str, type: categorical }
-      #- {name: gender, active: True, dtype: str, type: categorical}
-      #- {name: postcode, active: True, dtype: str, type: categorical}
-      #- {name: age, active: True, dtype: str, type: categorical}
       - { name: is_subscriber, active: True, dtype: str, type: categorical }
       - { name: premium, active: True, dtype: str, type: categorical }
       - { name: article_type, active: True, dtype: str, type: categorical }
@@ -29,15 +26,8 @@ dataset_config:
       - { name: topics, active: True, dtype: str, type: sequence, splitter: ^, max_len: 5, padding: pre }
       - { name: category, active: True, dtype: str, type: categorical }
       - { name: subcategory, active: True, dtype: str, type: sequence, splitter: ^, max_len: 5, padding: pre }
-      #- {name: total_inviews, active: False, dtype: float, type: numeric, fill_na: 0}
-      #- {name: total_pageviews, active: False, dtype: float, type: numeric, fill_na: 0}
-      #- {name: pageviews_inviews_ratio, active: False, dtype: float, type: numeric, fill_na: 0}
-      #- {name: total_read_time, active: False, dtype: float, type: numeric, fill_na: 0}
       - { name: sentiment_score, active: False, dtype: float, type: numeric, fill_na: 0 }
       - { name: popularity_score, active: True, dtype: float, type: numeric, fill_na: 0 }
-      #- { name: virality_score, active: True, dtype: float, type: meta, remap: False }
-      #- { name: freshness_decay, active: True, dtype: float, type: numeric, fill_na: 0 }
-      #- { name: near_realtime_ctr, active: True, dtype: float, type: numeric, fill_na: 0 }
       - { name: sentiment_label, active: True, dtype: str, type: categorical }
       - { name: subcat1, active: True, dtype: str, type: categorical }
       - { name: topic1, active: True, dtype: str, type: categorical }

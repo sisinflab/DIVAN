@@ -16,6 +16,8 @@
 import sys
 import os
 
+import numpy as np
+
 # extend the sys.path to fix the import problem
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir_two_up = os.path.dirname(os.path.dirname(current_dir))
@@ -23,7 +25,7 @@ sys.path.extend([parent_dir_two_up])
 import polars as pl
 import gc
 from utils.download_dataset import download_ebnerd_dataset
-from utils.functions import (compute_item_popularity_scores, get_enriched_user_history, exponential_decay, )
+from utils.functions import (compute_item_popularity_scores, exponential_decay, )
 import argparse
 
 import warnings
@@ -110,19 +112,14 @@ if __name__ == '__main__':
     history = history.fill_null("")
     gc.collect()
 
-    train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
-    valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
-    train_behaviors = pl.scan_parquet(train_behaviors_file)
-    valid_behaviors = pl.scan_parquet(valid_behaviors_file)
+    # Group by user_id and aggregate the article IDs into a list
+    R = history.groupby('user_id').agg(pl.col('article_id_fixed').alias('article_ids'))
 
-    behaviors = pl.concat([train_behaviors, valid_behaviors])
-    behaviors = behaviors.unique(subset=['impression_id'])
-    behaviors = behaviors.fill_null("").collect()
-
-    R = get_enriched_user_history(behaviors, history)
+    # Convert to list of np.array
+    R = [np.unique(np.array(ids)) for ids in R['article_ids'].to_list()]
     popularity_scores = compute_item_popularity_scores(R)
 
-    del train_behaviors, valid_behaviors, history, behaviors
+    del history
     gc.collect()
 
     news = news.with_columns(

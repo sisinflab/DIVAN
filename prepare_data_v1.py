@@ -26,12 +26,10 @@ from sklearn.decomposition import PCA
 import gc
 from utils.download_dataset import download_ebnerd_dataset
 from utils.functions import (map_feat_id_func, tokenize_seq, impute_list_with_mean, encode_date_list,
-                             compute_item_popularity_scores, get_enriched_user_history,
-                             sampling_strategy_wu2019, create_binary_labels_column, exponential_decay,
-                             create_inviews_vectors)
+                             compute_item_popularity_scores, sampling_strategy_wu2019, create_binary_labels_column,
+                             exponential_decay, create_inviews_vectors)
 from utils.sampling import create_test2
 import argparse
-
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -104,28 +102,17 @@ if __name__ == '__main__':
     test_news_file = os.path.join(test_path, "articles.parquet")
     test_news = pl.scan_parquet(test_news_file)
 
-    if args['neg_sampling']:
-        test2_path = dataset_path + '/test2/'
-        if not os.path.isdir(test2_path):
-            create_test2(dataset_path)
-        test2_news_file = os.path.join(test2_path, "articles.parquet")
-        test2_news = pl.scan_parquet(test2_news_file)
-        news = pl.concat([train_news, test_news, test2_news])
-        del test2_news
-    else:
-        news = pl.concat([train_news, test_news])
-    
+    news = pl.concat([train_news, test_news])
+
     del train_news, test_news
     gc.collect()
 
-    news = news.unique(subset=['article_id'])
-    news = news.fill_null("")
-
-    news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
-                        'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
-                        'sentiment_score', 'sentiment_label'])
     news = (
         news
+        .unique(subset=['article_id'])
+        .fill_null("")
+        .select(['article_id', 'published_time', 'last_modified_time', 'premium', 'article_type', 'ner_clusters',
+                 'topics', 'category', 'subcategory', 'sentiment_score', 'sentiment_label'])
         .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
         .collect()
     )
@@ -143,13 +130,8 @@ if __name__ == '__main__':
     news = (
         news
         .with_columns(topic1=pl.col('topics').apply(lambda x: str(x.split("^")[0]) if len(x.split("^")) > 0 else ""))
-        .with_columns(topic2=pl.col('topics').apply(lambda x: str(x.split("^")[1]) if len(x.split("^")) > 1 else ""))
-        .with_columns(topic3=pl.col('topics').apply(lambda x: str(x.split("^")[2]) if len(x.split("^")) > 2 else ""))
     )
     news2topic1 = dict(zip(news["article_id"].cast(str), news["topic1"].cast(str)))
-    news2topic2 = dict(zip(news["article_id"].cast(str), news["topic2"].cast(str)))
-    news2topic3 = dict(zip(news["article_id"].cast(str), news["topic3"].cast(str)))
-
 
     print("Compute news popularity...")
     train_history_file = os.path.join(train_path, "history.parquet")
@@ -162,30 +144,29 @@ if __name__ == '__main__':
 
         history = pl.concat([train_history, valid_history, test_history])
         del train_history, valid_history, test_history
+        gc.collect()
     else:
         history = pl.concat([train_history, valid_history])
         del train_history, valid_history
+        gc.collect()
 
-    history = history.groupby("user_id").agg(pl.col("article_id_fixed"))
-    history = history.with_columns(
-        pl.col("article_id_fixed").map_elements(
-            lambda row: list(set([x for xs in row for x in xs]))).cast(pl.List(pl.Int32))).collect()
-    history = history.fill_null("")
-    gc.collect()
+    history = (
+        history
+        .groupby("user_id").agg(pl.col("article_id_fixed"))
+        .with_columns(
+            pl.col("article_id_fixed").map_elements(
+                lambda row: list(set([x for xs in row for x in xs]))).cast(pl.List(pl.Int32)))
+        .collect()
+        .fill_null("")
+    )
 
-    train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
-    valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
-    train_behaviors = pl.scan_parquet(train_behaviors_file)
-    valid_behaviors = pl.scan_parquet(valid_behaviors_file)
-
-    behaviors = pl.concat([train_behaviors, valid_behaviors])
-    behaviors = behaviors.unique(subset=['impression_id'])
-    behaviors = behaviors.fill_null("").collect()
-
-    R = get_enriched_user_history(behaviors, history)
+    # Group by user_id and aggregate the article IDs into a list
+    R = history.groupby('user_id').agg(pl.col('article_id_fixed').alias('article_ids'))
+    # Convert to list of np.array
+    R = [np.unique(np.array(ids)) for ids in R['article_ids'].to_list()]
     popularity_scores = compute_item_popularity_scores(R)
 
-    del train_behaviors, valid_behaviors, history
+    del history, R
     gc.collect()
 
     news = news.with_columns(
@@ -194,7 +175,7 @@ if __name__ == '__main__':
 
     news2pop = dict(zip(news["article_id"].cast(str), news["popularity_score"].cast(str)))
 
-    del R, popularity_scores
+    del popularity_scores
     gc.collect()
 
     print(news.head())
@@ -209,16 +190,18 @@ if __name__ == '__main__':
     def join_data(data_path):
         history_file = os.path.join(data_path, "history.parquet")
         history_df = pl.scan_parquet(history_file)
-        history_df = history_df.rename({"article_id_fixed": "hist_id",
-                                        "read_time_fixed": "hist_read_time",
-                                        "impression_time_fixed": "hist_time",
-                                        "scroll_percentage_fixed": "hist_scroll_percent"})
-
-        # missing imputation of hist_scroll_percent, hist_read_time, hist_time
-        history_df = history_df.with_columns(
-            pl.col("hist_scroll_percent").apply(impute_list_with_mean),
-            pl.col("hist_read_time").apply(impute_list_with_mean),
-            pl.col("hist_time").apply(encode_date_list)
+        history_df = (
+            history_df
+            .rename({"article_id_fixed": "hist_id",
+                     "read_time_fixed": "hist_read_time",
+                     "impression_time_fixed": "hist_time",
+                     "scroll_percentage_fixed": "hist_scroll_percent"})
+            # missing imputation of hist_scroll_percent, hist_read_time, hist_time
+            .with_columns(
+                pl.col("hist_scroll_percent").apply(impute_list_with_mean),
+                pl.col("hist_read_time").apply(impute_list_with_mean),
+                pl.col("hist_time").apply(encode_date_list)
+            )
         )
 
         history_df = tokenize_seq(history_df, 'hist_id', map_feat_id=False, max_seq_length=MAX_SEQ_LEN)
@@ -232,79 +215,63 @@ if __name__ == '__main__':
                 "hist_subcat1"),
             pl.col("hist_id").apply(lambda x: "^".join([news2topic1.get(i, "") for i in x.split("^")])).alias(
                 "hist_topic1"),
-            pl.col("hist_id").apply(lambda x: "^".join([news2topic2.get(i, "") for i in x.split("^")])).alias(
-                "hist_topic2"),
-            pl.col("hist_id").apply(lambda x: "^".join([news2topic3.get(i, "") for i in x.split("^")])).alias(
-                "hist_topic3"),
             pl.col("hist_id").apply(lambda x: "^".join([news2sentiment.get(i, "") for i in x.split("^")])).alias(
                 "hist_sentiment"),
             pl.col("hist_id").apply(lambda x: "^".join([news2type.get(i, "") for i in x.split("^")])).alias(
                 "hist_type"),
             pl.col('hist_id').apply(lambda x: "^".join([news2pop.get(i, "0") for i in x.split("^")])).alias(
                 "hist_pop")
-        )
-        history_df = history_df.collect()
+        ).collect()
+
         behavior_file = os.path.join(data_path, "behaviors.parquet")
-        sample_df = pl.scan_parquet(behavior_file)
-        sample_df.drop("gender", "postcode", "age")
+        sample_df = pl.scan_parquet(behavior_file).select('impression_id', 'article_id', 'impression_time',
+                                                          'device_type', 'article_ids_inview', 'article_ids_clicked',
+                                                          'user_id', 'is_sso_user', 'is_subscriber')
         if "test/" in data_path:
             sample_df = (
                 sample_df.rename({"article_ids_inview": "article_id"})
                 .explode('article_id')
+                .with_columns(
+                    pl.lit(None).alias("trigger_id"),
+                    pl.lit(0).alias("click")
+                )
+                .collect()
             )
-            sample_df = sample_df.with_columns(
-                pl.lit(None).alias("trigger_id"),
-                pl.lit(0).alias("click")
-            ).collect()
         else:
+            sample_df = (
+                sample_df
+                .collect()
+                .with_columns(
+                    length=pl.col('article_ids_clicked').map_elements(lambda x: len(x)))
+            )
             if args['neg_sampling']:
-                print("Performing negative sampling...")
-                if "test2" in data_path:
-                    sample_df = (
-                        sample_df.rename({"article_id": "trigger_id"})
-                        .rename({"article_ids_inview": "article_id"})
-                        .explode('article_id')
-                        .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-                        .drop(["article_ids_clicked"])
-                        .collect()
-                    )
-                else:
-                    sample_df = (
-                        sample_df.rename({"article_id": "trigger_id"})
-                        .collect()
-                        .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
-                              inview_col="article_ids_inview", with_replacement=True, seed=123)
-                        .with_columns(
-                            pl.col("impression_id").cast(pl.String) + pl.col("article_ids_clicked").cum_count().cast(
-                                pl.Int32).cast(
-                                pl.String))
-                        .with_columns(pl.col("impression_id").cast(pl.Int64))
-                        .pipe(create_binary_labels_column, clicked_col="article_ids_clicked",
-                              inview_col="article_ids_inview")
-                        .drop("labels")
-                        .rename({"article_ids_inview": "article_id"})
-                        .explode("article_id")
-                        .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-                        .drop("article_ids_clicked")
-                        .with_columns(pl.col("article_id").cast(pl.Int32))
-                    )
-
+                sample_df = (
+                    sample_df.rename({"article_id": "trigger_id"})
+                    .filter(pl.col('length') == 1)
+                    .pipe(sampling_strategy_wu2019, npratio=14, shuffle=True, clicked_col="article_ids_clicked",
+                          inview_col="article_ids_inview", with_replacement=True, seed=123)
+                    .pipe(create_binary_labels_column, clicked_col="article_ids_clicked",
+                          inview_col="article_ids_inview")
+                    .drop("labels")
+                    .rename({"article_ids_inview": "article_id"})
+                    .explode("article_id")
+                    .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
+                    .drop(["article_ids_clicked", "lenght"])
+                    .with_columns(pl.col("article_id").cast(pl.Int32))
+                )
             else:
                 sample_df = (
                     sample_df.rename({"article_id": "trigger_id"})
                     .rename({"article_ids_inview": "article_id"})
+                    .filter(pl.col("length") == 1)
                     .explode('article_id')
                     .with_columns(click=pl.col("article_id").is_in(pl.col("article_ids_clicked")).cast(pl.Int8))
-                    .drop(["article_ids_clicked"])
-                    .collect()
+                    .drop(["article_ids_clicked", "lenght"])
                 )
         sample_df = (
             sample_df
             .join(news, on='article_id', how="left")
-            .join(history_df, on='user_id', how="left"))
-
-        sample_df = (
-            sample_df
+            .join(history_df, on='user_id', how="left")
             .with_columns(
                 publish_days=(pl.col('impression_time') - pl.col('published_time')).dt.days().cast(pl.Int32),
                 publish_hours=(pl.col('impression_time') - pl.col('published_time')).dt.hours().cast(pl.Int32),
@@ -324,8 +291,9 @@ if __name__ == '__main__':
                 pl.col("publish_hours").clip_max(24)
             )
             .drop(
-                ["impression_time", "published_time", "last_modified_time", "next_scroll_percentage", "next_read_time"])
+                ["impression_time", "published_time", "last_modified_time", "freshness_decay"])
         )
+
         print(sample_df.columns)
         return sample_df
 
@@ -350,14 +318,6 @@ if __name__ == '__main__':
     del valid_df
     gc.collect()
 
-    if args['neg_sampling']:
-        test2_df = join_data(test2_path)
-        print(test2_df.head())
-        print("Test samples", test2_df.shape)
-        test2_df.write_csv(f"{data_folder}/{dataset_version}/test2.csv")
-        del test2_df
-        gc.collect()
-
     if args['test']:
         test_df = join_data(test_path)
         print(test_df.head())
@@ -365,6 +325,9 @@ if __name__ == '__main__':
         test_df.write_csv(f"{data_folder}/{dataset_version}/test.csv")
         del test_df
         gc.collect()
+
+    del news2cat, news2pop, news2type, news2subcat, news2sentiment, news2topic1
+    gc.collect()
 
     print("Preprocess pretrained embeddings...")
     image_emb_path = dataset_path + '/image_embeddings.parquet'
@@ -395,6 +358,13 @@ if __name__ == '__main__':
     gc.collect()
 
     print("Create a representation of the inviews")
+    train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
+    valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
+    train_behaviors = pl.scan_parquet(train_behaviors_file)
+    valid_behaviors = pl.scan_parquet(valid_behaviors_file)
+    behaviors = pl.concat([train_behaviors, valid_behaviors])
+    del train_behaviors, valid_behaviors
+    gc.collect()
     if args['test']:
         behavior_file_test = os.path.join(test_path, "behaviors.parquet")
         behavior_df_test = pl.read_parquet(behavior_file_test).drop('is_beyond_accuracy')
@@ -404,8 +374,12 @@ if __name__ == '__main__':
         del behavior_df_test
         gc.collect()
 
-    impr_ids, inviews_vectors = create_inviews_vectors(behaviors, emb_df)
+    impr_ids, inviews_vectors = create_inviews_vectors(behaviors.collect(), emb_df)
+    del behaviors, emb_df
+    gc.collect()
     inviews_emb = pca.fit_transform(inviews_vectors)
+    del inviews_vectors
+    gc.collect()
     print("inviews_emb.shape", inviews_emb.shape)
     item_dict = {
         "key": impr_ids.cast(str),
@@ -413,6 +387,6 @@ if __name__ == '__main__':
     }
     print(f"Save inviews_emb_dim{embedding_size}.npz...")
     np.savez(f"{data_folder}/{dataset_version}/inviews_{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-    del emb_df, impr_ids, inviews_vectors, inviews_emb, item_dict
+    del impr_ids, inviews_emb, item_dict
     gc.collect()
     print("All done.")
