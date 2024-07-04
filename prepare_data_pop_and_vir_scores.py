@@ -23,8 +23,7 @@ sys.path.extend([parent_dir_two_up])
 import polars as pl
 import gc
 from utils.download_dataset import download_ebnerd_dataset
-from utils.functions import (map_feat_id_func, tokenize_seq,
-                             compute_item_popularity_scores, get_enriched_user_history, exponential_decay,)
+from utils.functions import (compute_item_popularity_scores, get_enriched_user_history, exponential_decay, )
 import argparse
 
 import warnings
@@ -33,7 +32,7 @@ warnings.filterwarnings("ignore")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--size', type=str, default='demo', help='The size of the dataset to download')
+    parser.add_argument('--size', type=str, default='small', help='The size of the dataset to download')
     parser.add_argument('--data_folder', type=str, default='./data', help='The folder in which data will be stored')
     parser.add_argument('--tag', type=str, default='x1', help='The tag of the preprocessed dataset to save')
     parser.add_argument('--test', action="store_true", help='Use this flag to download the test set (default no)')
@@ -83,25 +82,11 @@ if __name__ == '__main__':
     test_news_file = os.path.join(test_path, "articles.parquet")
     test_news = pl.scan_parquet(test_news_file)
 
-
     news = pl.concat([train_news, test_news])
     news = news.unique(subset=['article_id'])
     news = news.fill_null("")
 
-    news = news.select(['article_id', 'published_time', 'last_modified_time', 'premium',
-                        'article_type', 'ner_clusters', 'topics', 'category', 'subcategory',
-                        'sentiment_score', 'sentiment_label'])
-    news = (
-        news
-        .with_columns(subcat1=pl.col('subcategory').apply(lambda x: str(x[0]) if len(x) > 0 else ""))
-        .collect()
-    )
-
-    news = tokenize_seq(news, 'ner_clusters', map_feat_id=True)
-    news = tokenize_seq(news, 'topics', map_feat_id=True)
-    news = tokenize_seq(news, 'subcategory', map_feat_id=False)
-    news = map_feat_id_func(news, "sentiment_label")
-    news = map_feat_id_func(news, "article_type")
+    news = news.select(['article_id', 'published_time'])
 
     print("Compute news popularity...")
     train_history_file = os.path.join(train_path, "history.parquet")
@@ -142,18 +127,10 @@ if __name__ == '__main__':
 
     news = news.with_columns(
         pl.col("article_id").apply(lambda x: popularity_scores.get(x, 0.0)).alias("popularity_score"),
-    )
-
-    news2pop = dict(zip(news["article_id"].cast(str), news["popularity_score"].cast(str)))
+    ).collect()
 
     del R, popularity_scores
     gc.collect()
-
-    print(news.head())
-    print("Save news info...")
-    os.makedirs(f"{data_folder}/{dataset_version}/", exist_ok=True)
-    with open(f"{data_folder}/{dataset_version}//news_info.jsonl", "w") as f:
-        f.write(news.write_json(row_oriented=True, pretty=True))
 
     print("Preprocess behavior data...")
 
@@ -195,22 +172,29 @@ if __name__ == '__main__':
             )
         )
 
-        sample_df = sample_df.select("impression_id", "user_id", "article_id", "click", "popularity_score", "virality_score")
+        sample_df = sample_df.select("impression_id", "user_id", "article_id", "click", "popularity_score",
+                                     "virality_score")
         print(sample_df.columns)
         return sample_df
 
 
+    if os.path.isdir(f"{data_folder}/{dataset_version}"):
+        print(f"Folder '{data_folder}/{dataset_version}' exists.")
+    else:
+        os.makedirs(f"{data_folder}/{dataset_version}")
+        print(f"Folder '{data_folder}/{dataset_version}' has been created.")
+
     train_df = join_data(train_path)
     print(train_df.head())
     print("Train samples", train_df.shape)
-    train_df.write_csv(f"./{data_folder}/{dataset_version}/train.csv")
+    train_df.write_csv(f"{data_folder}/{dataset_version}/train.csv")
     del train_df
     gc.collect()
 
     valid_df = join_data(dev_path)
     print(valid_df.head())
     print("Validation samples", valid_df.shape)
-    valid_df.write_csv(f"./{data_folder}/{dataset_version}/valid.csv")
+    valid_df.write_csv(f"{data_folder}/{dataset_version}/valid.csv")
     del valid_df
     gc.collect()
 
@@ -218,6 +202,6 @@ if __name__ == '__main__':
         test_df = join_data(test_path)
         print(test_df.head())
         print("Test samples", test_df.shape)
-        test_df.write_csv(f"./{data_folder}/{dataset_version}/test.csv")
+        test_df.write_csv(f"{data_folder}/{dataset_version}/test.csv")
         del test_df
         gc.collect()

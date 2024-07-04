@@ -14,14 +14,14 @@ def grank(x):
     return str(x["impression_id"].iloc[0]) + " " + rank
 
 
-experiment_id = "popular_ranker"
+experiment_id = "virality_ranker"
 dataset = "large"
 print("Reading test set...")
 ans = pl.scan_csv(f"./data/Ebnerd_{dataset}_pop_and_vir_scores/test.csv")
-ans = ans.select(['impression_id', 'user_id', 'popularity_score'])
+ans = ans.select(['impression_id', 'user_id', 'virality_score'])
 print("Predicting scores...")
 logging.info("Predicting scores...")
-ans = ans.rename({'popularity_score': 'score'}).collect().to_pandas()
+ans = ans.rename({'virality_score': 'score'}).collect().to_pandas()
 print("Ranking samples...")
 logging.info("Ranking samples...")
 ans = ans.groupby(['impression_id', 'user_id'], sort=False).apply(grank).reset_index(drop=True)

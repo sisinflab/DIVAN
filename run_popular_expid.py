@@ -41,7 +41,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=f'./config/PopularRanker_config',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'Popular_ebnerd_{dataset}_x1',
+    parser.add_argument('--expid', type=str, default=f'Popular_ebnerd_large_x1',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
     args = vars(parser.parse_args())
