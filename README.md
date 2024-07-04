@@ -31,7 +31,7 @@ Paper reference FuxiCTR:
    docker exec -it recsyschallenge_container /bin/sh
    ```
 
-## Data Preparation
+## Data Preparation and Model Training (DIVAN and VDIN)
 
 1. Download and preprare data
 
@@ -55,4 +55,19 @@ Paper reference FuxiCTR:
 
     ```bash
     python submit.py --config config/[VDIN|DIVAN]_ebnerd_large_x1_tuner_config_01 --expid [VDIN|DIVAN]_ebnerd_large_x1_001_1860e41e --gpu 0
+    ```
+   
+## Data preparation and prediction with PopularRanker and ViralRanker
+1. Download and preprare data
+
+    ```bash
+    python prepare_data_pop_and_vir_scores.py --size large --test
+    ```
+2. Test the model on the validation set:
+    ```bash
+    python run_[popular|virality]_expid.py
+    ```
+3. Make predictions on the test set:
+   ```bash
+    python submit_[popular|viral].py
     ```
