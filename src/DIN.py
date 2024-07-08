@@ -106,12 +106,10 @@ class DIN(BaseModel):
                 feature_emb_dict[field] = field_emb
         feature_emb = self.embedding_layer.dict2tensor(feature_emb_dict, flatten_emb=True)
         y_pred = self.dnn(feature_emb)
-        if self._total_steps % self._eval_steps == 0:
-            return_dict = {"y_pred": y_pred.float(),
-                           "positive_y_pred_din": y_pred[labels == 1].mean(),
-                           "negative_y_pred_din": y_pred[labels == 0].mean()}
-        else:
-            return_dict = {"y_pred": y_pred.float()}
+        return_dict = {"y_pred": y_pred.float(),
+                       "positive_y_pred_din": y_pred[labels == 1].mean(),
+                       "negative_y_pred_din": y_pred[labels == 0].mean()}
+
         return return_dict
 
     def train_step(self, batch_data):
