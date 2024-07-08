@@ -361,36 +361,4 @@ if __name__ == '__main__':
     del emb, item_dict
     gc.collect()
 
-    print("Create a representation of the inviews")
-    train_behaviors_file = os.path.join(train_path, "behaviors.parquet")
-    valid_behaviors_file = os.path.join(dev_path, "behaviors.parquet")
-    train_behaviors = pl.scan_parquet(train_behaviors_file)
-    valid_behaviors = pl.scan_parquet(valid_behaviors_file)
-    behaviors = pl.concat([train_behaviors, valid_behaviors])
-    del train_behaviors, valid_behaviors
-    gc.collect()
-    if args['test']:
-        behavior_file_test = os.path.join(test_path, "behaviors.parquet")
-        behavior_df_test = pl.read_parquet(behavior_file_test).drop('is_beyond_accuracy')
-
-        behaviors = pl.concat([behaviors.select(behavior_df_test.columns), behavior_df_test])
-        behaviors = behaviors.unique(subset=['impression_id'])
-        del behavior_df_test
-        gc.collect()
-
-    impr_ids, inviews_vectors = create_inviews_vectors(behaviors.collect(), emb_df)
-    del behaviors, emb_df
-    gc.collect()
-    inviews_emb = pca.fit_transform(inviews_vectors)
-    del inviews_vectors
-    gc.collect()
-    print("inviews_emb.shape", inviews_emb.shape)
-    item_dict = {
-        "key": impr_ids.cast(str),
-        "value": inviews_emb
-    }
-    print(f"Save inviews_emb_dim{embedding_size}.npz...")
-    np.savez(f"{data_folder}/{dataset_version}/inviews_{embedding_type}_emb_dim{embedding_size}.npz", **item_dict)
-    del impr_ids, inviews_emb, item_dict
-    gc.collect()
     print("All done.")

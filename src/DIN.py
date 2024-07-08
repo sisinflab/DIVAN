@@ -27,7 +27,6 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
 
 
 class DIN(BaseModel):
@@ -90,8 +89,6 @@ class DIN(BaseModel):
         self.reset_parameters()
         self.model_to_device()
         self.loss_name = kwargs["loss"]
-        self.checkpoint = os.path.abspath(
-            os.path.join(self.model_dir, self.model_id + datetime.now().strftime("%b%d_%H-%M-%S") + ".model"))
 
     def forward(self, inputs):
         X = self.get_inputs(inputs)
@@ -185,6 +182,7 @@ class DIN(BaseModel):
                 }, self._epoch_index)
                 train_loss = 0
                 self.eval_step()
+                break
             if self._stop_training:
                 break
 

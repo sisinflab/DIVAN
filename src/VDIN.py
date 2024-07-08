@@ -181,6 +181,7 @@ class VDIN(BaseModel):
                 self.writer.add_scalar("alpha", return_dict['alpha'], self._epoch_index)
                 train_loss = 0
                 self.eval_step()
+                break
             if self._stop_training:
                 break
 

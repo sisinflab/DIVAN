@@ -16,6 +16,7 @@
 # # =========================================================================
 #
 #
+import random
 
 import numpy as np
 import torch
@@ -205,7 +206,8 @@ class BlockDataPipe(data.IterDataPipe):
                 for idx, block in enumerate(self.block_datapipe)
                 if idx % worker_info.num_workers == worker_info.id
             ]
-
+        if self.shuffle:
+            random.shuffle(block_list)
         for block in block_list:
             block_data = self.read_block(block)
             if self.shuffle:
