@@ -45,18 +45,18 @@ if __name__ == '__main__':
     ''' Usage: python submit.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_small_x1_tuner_config_01',
+    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_large_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_small_x1_001_3c318e74',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_large_x1_001_b1afac3a',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
-    parser.add_argument('--test_file', type=str, default="./data/small_roberta128_x1_bpr/test.csv", help='The test csv file')
 
     args = vars(parser.parse_args())
 
     experiment_id = args['expid']
     params = load_config(args['config'], experiment_id)
     params['gpu'] = args['gpu']
+    test_csv = params["test_data"]
     set_logger(params)
     logging.info("Params: " + print_to_json(params))
     seed_everything(seed=params['seed'])
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     model.load_weights(model.checkpoint)
 
     test_gen = RankDataLoader(feature_map, stage='test', **params).make_iterator()
-    ans = pl.scan_csv("./data/small_roberta128_x1_bpr/test.csv")
+    ans = pl.scan_csv(test_csv)
     ans = ans.select(['impression_id', 'user_id']).collect().to_pandas()
     logging.info("Predicting scores...")
     ans["score"] = model.predict(test_gen)
