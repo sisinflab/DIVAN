@@ -12,6 +12,7 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
+from utils.metrics import evaluate_metrics
 
 
 class DIVAN(BaseModel):
@@ -266,26 +267,51 @@ class DIVAN(BaseModel):
         else:
             self.loss_fn = get_loss(loss)
 
+    # def get_scores_grouped_by_impression(self, group_id, y_true, return_dict):
+    #     unique_groups = torch.unique(group_id)
+    #     y_true_list = []
+    #     y_pred_list = []
+    #     y_pred_pop_list = []
+    #     y_pred_din_list = []
+    #
+    #     y_pred = return_dict['y_pred']
+    #     y_pred_pop = return_dict['y_pred_pop']
+    #     y_pred_din = return_dict['y_pred_din']
+    #
+    #     for group in unique_groups:
+    #         mask = (group_id == group)
+    #         if mask.sum().item() == 15:
+    #             y_true_list.append(y_true[mask])
+    #             y_pred_list.append(y_pred[mask])
+    #             y_pred_pop_list.append(y_pred_pop[mask])
+    #             y_pred_din_list.append(y_pred_din[mask])
+    #         else:
+    #             print(f"GROUP ID {group} LENGTH IS WRONG REMOVED: {mask.sum().item()}")
+    #
+    #     return_dict = {
+    #         'y_pred': torch.stack(y_pred_list),
+    #         'y_pred_pop': torch.stack(y_pred_pop_list),
+    #         'y_pred_din': torch.stack(y_pred_din_list),
+    #         'alpha': return_dict['alpha']
+    #     }
+    #
+    #     return return_dict, torch.stack(y_true_list)
+
     def get_scores_grouped_by_impression(self, group_id, y_true, return_dict):
-        unique_groups = torch.unique(group_id)
-        y_true_list = []
-        y_pred_list = []
-        y_pred_pop_list = []
-        y_pred_din_list = []
+        sorted_idx = torch.argsort(group_id)
+        group_id_sorted = group_id[sorted_idx]
+        y_true_sorted = y_true[sorted_idx]
+        y_pred_sorted = return_dict['y_pred'][sorted_idx]
+        y_pred_pop_sorted = return_dict['y_pred_pop'][sorted_idx]
+        y_pred_din_sorted = return_dict['y_pred_din'][sorted_idx]
 
-        y_pred = return_dict['y_pred']
-        y_pred_pop = return_dict['y_pred_pop']
-        y_pred_din = return_dict['y_pred_din']
+        _, counts = torch.unique_consecutive(group_id_sorted, return_counts=True)
 
-        for group in unique_groups:
-            mask = (group_id == group)
-            if mask.sum().item() == 15:
-                y_true_list.append(y_true[mask])
-                y_pred_list.append(y_pred[mask])
-                y_pred_pop_list.append(y_pred_pop[mask])
-                y_pred_din_list.append(y_pred_din[mask])
-            else:
-                print(f"GROUP ID {group} LENGTH IS WRONG REMOVED: {mask.sum().item()}")
+        y_true_list = torch.split_with_sizes(y_true_sorted, counts.tolist())
+        y_pred_list = torch.split_with_sizes(y_pred_sorted, counts.tolist())
+        y_pred_pop_list = torch.split_with_sizes(y_pred_pop_sorted, counts.tolist())
+        y_pred_din_list = torch.split_with_sizes(y_pred_din_sorted, counts.tolist())
+
 
         return_dict = {
             'y_pred': torch.stack(y_pred_list),
@@ -293,7 +319,6 @@ class DIVAN(BaseModel):
             'y_pred_din': torch.stack(y_pred_din_list),
             'alpha': return_dict['alpha']
         }
-
         return return_dict, torch.stack(y_true_list)
 
     def evaluate(self, data_generator, metrics=None):
@@ -387,3 +412,6 @@ class DIVAN(BaseModel):
                 y_pred.extend(return_dict["y_pred_pop"].data.cpu().numpy().reshape(-1))
             y_pred = np.array(y_pred, np.float64)
             return y_pred
+
+    def evaluate_metrics(self, y_true, y_pred, metrics, group_id=None):
+        return evaluate_metrics(y_true, y_pred, metrics, group_id)

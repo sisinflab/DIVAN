@@ -27,7 +27,7 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
-
+from utils.metrics import evaluate_metrics
 
 class DIN(BaseModel):
     def __init__(self,
@@ -205,15 +205,30 @@ class DIN(BaseModel):
         else:
             self.loss_fn = get_loss(loss)
 
-    def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
-        unique_groups = torch.unique(group_id)
-        y_true_list = []
-        y_pred_list = []
+    # def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
+    #     unique_groups = torch.unique(group_id)
+    #     y_true_list = []
+    #     y_pred_list = []
+    #
+    #     for group in unique_groups:
+    #         mask = (group_id == group)
+    #         y_true_list.append(y_true[mask])
+    #         y_pred_list.append(y_pred[mask])
+    #
+    #     return_dict = {'y_pred': torch.stack(y_pred_list)}
+    #
+    #     return return_dict, torch.stack(y_true_list)
 
-        for group in unique_groups:
-            mask = (group_id == group)
-            y_true_list.append(y_true[mask])
-            y_pred_list.append(y_pred[mask])
+    def get_scores_grouped_by_impression(self, group_id, y_true, y_pred):
+        sorted_idx = torch.argsort(group_id)
+        group_id_sorted = group_id[sorted_idx]
+        y_true_sorted = y_true[sorted_idx]
+        y_pred_sorted = y_pred[sorted_idx]
+
+        _, counts = torch.unique_consecutive(group_id_sorted, return_counts=True)
+
+        y_true_list = torch.split_with_sizes(y_true_sorted, counts.tolist())
+        y_pred_list = torch.split_with_sizes(y_pred_sorted, counts.tolist())
 
         return_dict = {'y_pred': torch.stack(y_pred_list)}
 
@@ -286,3 +301,6 @@ class DIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             return val_logs
+
+    def evaluate_metrics(self, y_true, y_pred, metrics, group_id=None):
+        return evaluate_metrics(y_true, y_pred, metrics, group_id)
