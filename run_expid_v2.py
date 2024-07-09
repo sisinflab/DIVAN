@@ -35,17 +35,19 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-dataset = "demo"  # small, large
+dataset = "large"  # small, large
 
 if __name__ == '__main__':
     ''' Usage: python run_expid.py --config {config_dir} --expid {experiment_id} --gpu {gpu_device_id}
     '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x2_tuner_config_02',
+    parser.add_argument('--config', type=str, default=f'./config/DIN_ebnerd_{dataset}_x1_tuner_config_01',
                         help='The config directory.')
-    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_small_x2_001_0e9fb625',
+    parser.add_argument('--expid', type=str, default=f'DIN_ebnerd_large_x1_001_b1afac3a',
                         help='The experiment id to run.')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
+    parser.add_argument("--from_checkpoint", action="store_true", help='Use this flag to run the expid starting from the checkpoint if exists')
+
     args = vars(parser.parse_args())
 
     experiment_id = args['expid']
@@ -70,6 +72,9 @@ if __name__ == '__main__':
     model_class = getattr(src, params['model'])
     model = model_class(feature_map, **params)
     model.count_parameters()  # print number of parameters used in model
+    if args["from_checkpoint"]:
+        model.to(device=model.device)
+        model.load_weights(model.checkpoint)
 
     train_gen, valid_gen = RankDataLoader(feature_map, stage='train', **params).make_iterator()
     model.fit(train_gen, validation_data=valid_gen, **params)
