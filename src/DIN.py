@@ -27,7 +27,6 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
-from utils.metrics import evaluate_metrics
 
 class DIN(BaseModel):
     def __init__(self,
@@ -180,7 +179,6 @@ class DIN(BaseModel):
                 }, self._epoch_index)
                 train_loss = 0
                 self.eval_step()
-                break
             if self._stop_training:
                 break
 
@@ -269,13 +267,16 @@ class DIN(BaseModel):
             group_id = np.array(group_id_list) if len(group_id) > 0 else None
             self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
 
-            if metrics is not None:
+            if metrics == ["val_loss"]:
+                val_logs = {"val_loss": val_loss / len(data_generator)}
+            elif metrics is not None:
                 val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
             else:
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
-            self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
+            if "avgAUC" in metrics:
+                self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
             return val_logs
 
     def evaluate_test(self, data_generator, metrics=None):
@@ -301,6 +302,3 @@ class DIN(BaseModel):
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             return val_logs
-
-    def evaluate_metrics(self, y_true, y_pred, metrics, group_id=None):
-        return evaluate_metrics(y_true, y_pred, metrics, group_id)

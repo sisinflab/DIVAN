@@ -12,7 +12,6 @@ import logging
 from tqdm import tqdm
 import sys
 from torch.utils.tensorboard import SummaryWriter
-from utils.metrics import evaluate_metrics
 
 
 class DIVAN(BaseModel):
@@ -213,7 +212,6 @@ class DIVAN(BaseModel):
                 self.writer.add_scalar("alpha", return_dict['alpha'].mean(), self._epoch_index)
                 train_loss = 0
                 self.eval_step()
-                break
             if self._stop_training:
                 break
 
@@ -266,36 +264,6 @@ class DIVAN(BaseModel):
             self.loss_fn = BPRLoss()
         else:
             self.loss_fn = get_loss(loss)
-
-    # def get_scores_grouped_by_impression(self, group_id, y_true, return_dict):
-    #     unique_groups = torch.unique(group_id)
-    #     y_true_list = []
-    #     y_pred_list = []
-    #     y_pred_pop_list = []
-    #     y_pred_din_list = []
-    #
-    #     y_pred = return_dict['y_pred']
-    #     y_pred_pop = return_dict['y_pred_pop']
-    #     y_pred_din = return_dict['y_pred_din']
-    #
-    #     for group in unique_groups:
-    #         mask = (group_id == group)
-    #         if mask.sum().item() == 15:
-    #             y_true_list.append(y_true[mask])
-    #             y_pred_list.append(y_pred[mask])
-    #             y_pred_pop_list.append(y_pred_pop[mask])
-    #             y_pred_din_list.append(y_pred_din[mask])
-    #         else:
-    #             print(f"GROUP ID {group} LENGTH IS WRONG REMOVED: {mask.sum().item()}")
-    #
-    #     return_dict = {
-    #         'y_pred': torch.stack(y_pred_list),
-    #         'y_pred_pop': torch.stack(y_pred_pop_list),
-    #         'y_pred_din': torch.stack(y_pred_din_list),
-    #         'alpha': return_dict['alpha']
-    #     }
-    #
-    #     return return_dict, torch.stack(y_true_list)
 
     def get_scores_grouped_by_impression(self, group_id, y_true, return_dict):
         sorted_idx = torch.argsort(group_id)
@@ -356,13 +324,16 @@ class DIVAN(BaseModel):
             group_id = np.array(group_id_list) if len(group_id) > 0 else None
             self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
 
-            if metrics is not None:
+            if metrics == ["val_loss"]:
+                val_logs = {"val_loss": val_loss / len(data_generator)}
+            elif metrics is not None:
                 val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
             else:
                 val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
             logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
-            self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
+            if "avgAUC" in metrics:
+                self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
             return val_logs
 
     def evaluate_test(self, data_generator, metrics=None):
@@ -412,6 +383,3 @@ class DIVAN(BaseModel):
                 y_pred.extend(return_dict["y_pred_pop"].data.cpu().numpy().reshape(-1))
             y_pred = np.array(y_pred, np.float64)
             return y_pred
-
-    def evaluate_metrics(self, y_true, y_pred, metrics, group_id=None):
-        return evaluate_metrics(y_true, y_pred, metrics, group_id)
