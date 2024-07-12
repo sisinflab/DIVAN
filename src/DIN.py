@@ -172,11 +172,11 @@ class DIN(BaseModel):
             train_loss += loss.item()
             if self._total_steps % self._eval_steps == 0:
                 logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
-                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
-                self.writer.add_scalars("mean_din_scores", {
-                    "mean_positive_din_scores": return_dict['positive_y_pred_din'] / self._eval_steps,
-                    "mean_negative_din_scores": return_dict['negative_y_pred_din'] / self._eval_steps
-                }, self._epoch_index)
+                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, int(self._total_steps / self._eval_steps))
+                self.writer.add_scalars("mean_din_proba", {
+                    "mean_positive_din_proba": return_dict['positive_y_pred_din'],
+                    "mean_negative_din_proba": return_dict['negative_y_pred_din']
+                }, int(self._total_steps / self._eval_steps))
                 train_loss = 0
                 self.eval_step()
             if self._stop_training:
@@ -265,7 +265,7 @@ class DIN(BaseModel):
             y_pred = np.array(y_pred_list, np.float64)
             y_true = np.array(y_true_list, np.float64)
             group_id = np.array(group_id_list) if len(group_id) > 0 else None
-            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
+            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), int(self._total_steps / self._eval_steps))
 
             if metrics == ["val_loss"]:
                 val_logs = {"val_loss": val_loss / len(data_generator)}
@@ -276,7 +276,7 @@ class DIN(BaseModel):
             logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             if "avgAUC" in metrics:
-                self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
+                self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], int(self._total_steps / self._eval_steps))
             return val_logs
 
     def evaluate_test(self, data_generator, metrics=None):

@@ -106,7 +106,7 @@ class DIVAN(BaseModel):
 
     def compute_loss(self, return_dict, y_true):
         loss = self.loss_fn(return_dict["y_pred"], y_true, reduction='mean')
-        loss += self.loss_fn(return_dict["y_pred_din"], y_true, reduction='mean')
+        loss += self.loss_fn(return_dict["din_proba"], y_true, reduction='mean')
 
         loss += self.regularization_loss() + 1e-4 * torch.norm(return_dict["alpha"])
         return loss
@@ -132,29 +132,34 @@ class DIVAN(BaseModel):
             {i: feature_emb_dict[i] for el in self.din_sequence_field for i in el}, flatten_emb=True)
         alpha = self.gate(user_emb)
 
-        # predict news popularity
+        # predict news virality
         news_recency_emb = self.embedding_layer.dict2tensor(
             {i: feature_emb_dict[i] for el in self.recency_field for i in el}, flatten_emb=True)
         news_content_emb = self.embedding_layer.dict2tensor(
             {i: feature_emb_dict[i] for el in self.din_target_field for i in el}, flatten_emb=True)
-        y_pred_pop = self.popnet(news_recency_emb, news_content_emb)
+        vir_scores = self.popnet(news_recency_emb, news_content_emb)
+        vir_proba = self.output_activation(vir_scores)
 
         # predict din scores
-        y_pred_din = self.dnn(feature_emb)
+        din_scores = self.dnn(feature_emb)
+        din_proba = self.output_activation(din_scores)
 
         # Combine the two prediction scores with user-specific parameters
-        y_pred_logits = alpha * y_pred_din + (1 - alpha) * y_pred_pop
-        y_pred = self.output_activation(y_pred_logits)
+        y_pred = alpha * din_proba + (1 - alpha) * vir_proba
 
         return_dict = {"y_pred": y_pred.float(),
-                       "y_pred_pop": self.output_activation(y_pred_pop).float(),
-                       "y_pred_din": self.output_activation(y_pred_din).float(),
-                       "positive_y_pred": y_pred_logits[labels == 1].mean(),
-                       "negative_y_pred": y_pred_logits[labels == 0].mean(),
-                       "positive_y_pred_din": y_pred_din[labels == 1].mean(),
-                       "negative_y_pred_din": y_pred_din[labels == 0].mean(),
-                       "positive_y_pred_pop": y_pred_pop[labels == 1].mean(),
-                       "negative_y_pred_pop": y_pred_pop[labels == 0].mean(),
+                       "vir_proba": vir_proba.float(),
+                       "din_proba": din_proba.float(),
+                       "positive_y_pred": y_pred[labels == 1].mean(),
+                       "negative_y_pred": y_pred[labels == 0].mean(),
+                       "positive_din_scores": din_scores[labels == 1].mean(),
+                       "negative_din_scores": din_scores[labels == 0].mean(),
+                       "positive_vir_scores": vir_scores[labels == 1].mean(),
+                       "negative_vir_scores": vir_scores[labels == 0].mean(),
+                       "positive_din_proba": din_proba[labels == 1].mean(),
+                       "negative_din_proba": din_proba[labels == 0].mean(),
+                       "positive_vir_proba": vir_proba[labels == 1].mean(),
+                       "negative_vir_proba": vir_proba[labels == 0].mean(),
                        "alpha": alpha}
         return return_dict
 
@@ -171,7 +176,7 @@ class DIVAN(BaseModel):
         else:
             loss = self.compute_loss(return_dict, y_true)
 
-        loss += torch.nn.functional.binary_cross_entropy(return_dict["y_pred_pop"], y_true, reduction='mean')
+        loss += torch.nn.functional.binary_cross_entropy(return_dict["vir_proba"], y_true, reduction='mean')
         loss.backward()
 
         nn.utils.clip_grad_norm_(self.parameters(), self._max_gradient_norm)
@@ -196,20 +201,29 @@ class DIVAN(BaseModel):
 
             if self._total_steps % self._eval_steps == 0:
                 logging.info("Train loss: {:.6f}".format(train_loss / self._eval_steps))
-                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps, self._epoch_index)
+                self.writer.add_scalar("Train_Loss_per_Epoch", train_loss / self._eval_steps,
+                                       int(self._total_steps / self._eval_steps))
                 self.writer.add_scalars("mean_comb_scores", {
                     "mean_positive_comb_scores": return_dict['positive_y_pred'],
                     "mean_negative_comb_scores": return_dict['negative_y_pred']
-                }, self._epoch_index)
+                }, int(self._total_steps / self._eval_steps))
                 self.writer.add_scalars("mean_din_scores", {
-                    "mean_positive_din_scores": return_dict['positive_y_pred_din'],
-                    "mean_negative_din_scores": return_dict['negative_y_pred_din']
-                }, self._epoch_index)
-                self.writer.add_scalars("mean_virality_scores", {
-                    "mean_positive_pop_scores": return_dict['positive_y_pred_pop'],
-                    "mean_negative_pop_scores": return_dict['negative_y_pred_pop']
-                }, self._epoch_index)
-                self.writer.add_scalar("alpha", return_dict['alpha'].mean(), self._epoch_index)
+                    "mean_positive_din_scores": return_dict['positive_din_scores'],
+                    "mean_negative_din_scores": return_dict['negative_din_scores']
+                }, int(self._total_steps / self._eval_steps))
+                self.writer.add_scalars("mean_vir_scores", {
+                    "mean_positive_vir_scores": return_dict['positive_vir_scores'],
+                    "mean_negative_vir_scores": return_dict['negative_vir_scores']
+                }, int(self._total_steps / self._eval_steps))
+                self.writer.add_scalars("mean_din_proba", {
+                    "mean_positive_din_proba": return_dict['positive_din_proba'],
+                    "mean_negative_din_proba": return_dict['negative_din_proba']
+                }, int(self._total_steps / self._eval_steps))
+                self.writer.add_scalars("mean_vir_proba", {
+                    "mean_positive_vir_proba": return_dict['positive_vir_proba'],
+                    "mean_negative_vir_proba": return_dict['negative_vir_proba']
+                }, int(self._total_steps / self._eval_steps))
+                self.writer.add_scalar("alpha", return_dict['alpha'].mean(), int(self._total_steps / self._eval_steps))
                 train_loss = 0
                 self.eval_step()
             if self._stop_training:
@@ -270,8 +284,8 @@ class DIVAN(BaseModel):
         group_id_sorted = group_id[sorted_idx]
         y_true_sorted = y_true[sorted_idx]
         y_pred_sorted = return_dict['y_pred'][sorted_idx]
-        y_pred_pop_sorted = return_dict['y_pred_pop'][sorted_idx]
-        y_pred_din_sorted = return_dict['y_pred_din'][sorted_idx]
+        y_pred_pop_sorted = return_dict['vir_proba'][sorted_idx]
+        y_pred_din_sorted = return_dict['din_proba'][sorted_idx]
 
         _, counts = torch.unique_consecutive(group_id_sorted, return_counts=True)
 
@@ -280,11 +294,10 @@ class DIVAN(BaseModel):
         y_pred_pop_list = torch.split_with_sizes(y_pred_pop_sorted, counts.tolist())
         y_pred_din_list = torch.split_with_sizes(y_pred_din_sorted, counts.tolist())
 
-
         return_dict = {
             'y_pred': torch.stack(y_pred_list),
-            'y_pred_pop': torch.stack(y_pred_pop_list),
-            'y_pred_din': torch.stack(y_pred_din_list),
+            'vir_proba': torch.stack(y_pred_pop_list),
+            'din_proba': torch.stack(y_pred_din_list),
             'alpha': return_dict['alpha']
         }
         return return_dict, torch.stack(y_true_list)
@@ -311,7 +324,7 @@ class DIVAN(BaseModel):
                 else:
                     loss = self.compute_loss(return_dict, self.get_labels(batch_data))
 
-                loss += torch.nn.functional.binary_cross_entropy(return_dict["y_pred_pop"], y_true, reduction='mean')
+                loss += torch.nn.functional.binary_cross_entropy(return_dict["vir_proba"], y_true, reduction='mean')
                 val_loss += loss.item()
 
                 y_pred_list.extend(return_dict["y_pred"].data.cpu().numpy().reshape(-1))
@@ -322,7 +335,8 @@ class DIVAN(BaseModel):
             y_pred = np.array(y_pred_list, np.float64)
             y_true = np.array(y_true_list, np.float64)
             group_id = np.array(group_id_list) if len(group_id) > 0 else None
-            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator), self._epoch_index)
+            self.writer.add_scalar("Validation_Loss_per_epoch", val_loss / len(data_generator),
+                                   int(self._total_steps / self._eval_steps))
 
             if metrics == ["val_loss"]:
                 val_logs = {"val_loss": val_loss / len(data_generator)}
@@ -333,7 +347,7 @@ class DIVAN(BaseModel):
             logging.info("Val loss: {:.6f}".format(val_loss / len(data_generator)))
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             if "avgAUC" in metrics:
-                self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], self._epoch_index)
+                self.writer.add_scalar("avgAUC_per_epoch", val_logs['avgAUC'], int(self._total_steps / self._eval_steps))
             return val_logs
 
     def evaluate_test(self, data_generator, metrics=None):
@@ -360,6 +374,54 @@ class DIVAN(BaseModel):
             logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
             return val_logs
 
+    def evaluate_din(self, data_generator, metrics=None):
+        self.eval()  # set to evaluation mode
+        with torch.no_grad():
+            y_pred = []
+            y_true = []
+            group_id = []
+            if self._verbose > 0:
+                data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
+            for batch_data in data_generator:
+                return_dict = self.forward(batch_data)
+                y_pred.extend(return_dict["din_proba"].data.cpu().numpy().reshape(-1))
+                y_true.extend(self.get_labels(batch_data).data.cpu().numpy().reshape(-1))
+                if self.feature_map.group_id is not None:
+                    group_id.extend(self.get_group_id(batch_data).numpy().reshape(-1))
+            y_pred = np.array(y_pred, np.float64)
+            y_true = np.array(y_true, np.float64)
+            group_id = np.array(group_id) if len(group_id) > 0 else None
+            if metrics is not None:
+                val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
+            else:
+                val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
+            logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+            return val_logs
+
+    def evaluate_vir(self, data_generator, metrics=None):
+        self.eval()  # set to evaluation mode
+        with torch.no_grad():
+            y_pred = []
+            y_true = []
+            group_id = []
+            if self._verbose > 0:
+                data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
+            for batch_data in data_generator:
+                return_dict = self.forward(batch_data)
+                y_pred.extend(return_dict["vir_proba"].data.cpu().numpy().reshape(-1))
+                y_true.extend(self.get_labels(batch_data).data.cpu().numpy().reshape(-1))
+                if self.feature_map.group_id is not None:
+                    group_id.extend(self.get_group_id(batch_data).numpy().reshape(-1))
+            y_pred = np.array(y_pred, np.float64)
+            y_true = np.array(y_true, np.float64)
+            group_id = np.array(group_id) if len(group_id) > 0 else None
+            if metrics is not None:
+                val_logs = self.evaluate_metrics(y_true, y_pred, metrics, group_id)
+            else:
+                val_logs = self.evaluate_metrics(y_true, y_pred, self.validation_metrics, group_id)
+            logging.info('[Metrics] ' + ' - '.join('{}: {:.6f}'.format(k, v) for k, v in val_logs.items()))
+            return val_logs
+
     def predict_din(self, data_generator):
         self.eval()  # set to evaluation mode
         with torch.no_grad():
@@ -368,7 +430,7 @@ class DIVAN(BaseModel):
                 data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
             for batch_data in data_generator:
                 return_dict = self.forward(batch_data)
-                y_pred.extend(return_dict["y_pred_din"].data.cpu().numpy().reshape(-1))
+                y_pred.extend(return_dict["din_proba"].data.cpu().numpy().reshape(-1))
             y_pred = np.array(y_pred, np.float64)
             return y_pred
 
@@ -380,6 +442,6 @@ class DIVAN(BaseModel):
                 data_generator = tqdm(data_generator, disable=False, file=sys.stdout)
             for batch_data in data_generator:
                 return_dict = self.forward(batch_data)
-                y_pred.extend(return_dict["y_pred_pop"].data.cpu().numpy().reshape(-1))
+                y_pred.extend(return_dict["vir_proba"].data.cpu().numpy().reshape(-1))
             y_pred = np.array(y_pred, np.float64)
             return y_pred
