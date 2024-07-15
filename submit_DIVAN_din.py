@@ -48,7 +48,7 @@ if __name__ == '__main__':
                         help='The config directory.')
     parser.add_argument('--expid', type=str, default=f'DIVAN_ebnerd_demo_x1_001_b1afac3a',
                         help='The experiment id to run.')
-    parser.add_argument('--scores', type=str, default=f'divan',
+    parser.add_argument('--scores', type=str, default=f'divan', choices=['divan', 'din', 'vir'],
                         help='The scores to use. (divan, din or vir)')
     parser.add_argument('--gpu', type=int, default=-1, help='The gpu index, -1 for cpu')
 
@@ -98,5 +98,5 @@ if __name__ == '__main__':
     os.makedirs("submit", exist_ok=True)
     with open('submit/predictions.txt', "w") as fout:
         fout.write("\n".join(ans.to_list()))
-    shutil.make_archive(f'submit/{experiment_id}', 'zip', 'submit/', 'predictions.txt')
+    shutil.make_archive(f"submit/{experiment_id}_{args['scores']}", 'zip', 'submit/', 'predictions.txt')
     logging.info("All done.")
