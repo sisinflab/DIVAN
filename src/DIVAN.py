@@ -434,7 +434,7 @@ class DIVAN(BaseModel):
             y_pred = np.array(y_pred, np.float64)
             return y_pred
 
-    def predict_pop(self, data_generator):
+    def predict_vir(self, data_generator):
         self.eval()  # set to evaluation mode
         with torch.no_grad():
             y_pred = []
